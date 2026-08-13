@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "Text Grabber",
+  "version": "1.0.0",
+  "description": "Auto-popup on job posting pages to save the page text to a folder you choose.",
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "Text Grabber — click to open settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "host_permissions": [
+    "*://*.linkedin.com/*",
+    "*://*.indeed.com/*",
+    "*://boards.greenhouse.io/*",
+    "*://job-boards.greenhouse.io/*",
+    "*://jobs.lever.co/*",
+    "*://*.myworkdayjobs.com/*",
+    "*://jobs.ashbyhq.com/*",
+    "*://jobs.smartrecruiters.com/*",
+    "*://*.icims.com/*",
+    "*://apply.workable.com/*",
+    "*://*.bamboohr.com/*",
+    "*://jobs.jobvite.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.linkedin.com/jobs/view/*",
+        "*://*.indeed.com/viewjob*",
+        "*://*.indeed.com/*/viewjob*",
+        "*://boards.greenhouse.io/*",
+        "*://job-boards.greenhouse.io/*",
+        "*://jobs.lever.co/*",
+        "*://*.myworkdayjobs.com/*",
+        "*://jobs.ashbyhq.com/*",
+        "*://jobs.smartrecruiters.com/*",
+        "*://*.icims.com/jobs/*",
+        "*://apply.workable.com/*",
+        "*://*.bamboohr.com/careers/*",
+        "*://jobs.jobvite.com/*"
+      ],
+      "js": ["content-script.js"],
+      "css": ["popup.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

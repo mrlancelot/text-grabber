@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Text Grabber — Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 480px;
+      margin: 40px auto;
+      color: #1f2937;
+      line-height: 1.5;
+    }
+    h1 { font-size: 18px; }
+    .folder-name { font-weight: 600; color: #16a34a; }
+    button {
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: none;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    #status { margin-top: 12px; font-size: 13px; color: #4b5563; }
+    #pendingNotice {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text Grabber</h1>
+  <p id="currentFolder">No save folder chosen yet.</p>
+  <div id="pendingNotice">A job posting is waiting to be saved. Choose/confirm your folder below.</div>
+  <button id="chooseBtn">Choose save folder</button>
+  <div id="status"></div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
