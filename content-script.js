@@ -1,20 +1,6 @@
 (function () {
   if (document.getElementById("tg-popup")) return;
 
-  function sanitizeFilename(name) {
-    return name
-      .replace(/[\\/:*?"<>|]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80);
-  }
-
-  function buildFilename() {
-    const title = sanitizeFilename(document.title || "job-posting");
-    const date = new Date().toISOString().slice(0, 10);
-    return `${title || "job-posting"} - ${date}.txt`;
-  }
-
   function extractPageText() {
     const header = `Title: ${document.title}\nURL: ${location.href}\nSaved: ${new Date().toISOString()}\n\n---\n\n`;
     return header + document.body.innerText.trim();
@@ -47,7 +33,6 @@
         {
           type: "TG_SAVE_TEXT",
           text: extractPageText(),
-          filename: buildFilename(),
         },
         (response) => {
           if (chrome.runtime.lastError) {

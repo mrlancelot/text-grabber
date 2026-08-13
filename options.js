@@ -1,4 +1,5 @@
 import { getFolderHandle, setFolderHandle } from "./idb.js";
+import { nextFilename } from "./counter.js";
 
 const currentFolderEl = document.getElementById("currentFolder");
 const pendingNoticeEl = document.getElementById("pendingNotice");
@@ -24,7 +25,8 @@ async function writePending(handle) {
   const { tgPending } = await chrome.storage.local.get("tgPending");
   if (!tgPending) return false;
 
-  const fileHandle = await handle.getFileHandle(tgPending.filename, { create: true });
+  const filename = await nextFilename();
+  const fileHandle = await handle.getFileHandle(filename, { create: true });
   const writable = await fileHandle.createWritable();
   await writable.write(tgPending.text);
   await writable.close();

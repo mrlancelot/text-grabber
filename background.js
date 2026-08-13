@@ -1,4 +1,5 @@
 import { getFolderHandle } from "./idb.js";
+import { nextFilename } from "./counter.js";
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -14,14 +15,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (handle) {
         const permission = await handle.queryPermission({ mode: "readwrite" });
         if (permission === "granted") {
-          await writeFile(handle, message.filename, message.text);
+          const filename = await nextFilename();
+          await writeFile(handle, filename, message.text);
           sendResponse({ ok: true, folderName: handle.name });
           return;
         }
       }
 
       await chrome.storage.local.set({
-        tgPending: { text: message.text, filename: message.filename },
+        tgPending: { text: message.text },
       });
       chrome.runtime.openOptionsPage();
       sendResponse({ ok: false, needsFolder: true });
