@@ -6,7 +6,7 @@ A Chrome extension that pops up on job posting pages (like Rakuten's cashback po
 
 1. Detects when you land on a job posting page from a known list of job boards/ATS platforms.
 2. Shows a small popup in the bottom-right corner of the page.
-3. Click **Save** — the page's text (title, URL, timestamp, and full visible text) is written to a `.txt` file in a folder you pick once and it remembers from then on.
+3. Click **Save** the page's text (title, URL, timestamp, and full visible text) is written to a `.txt` file in a folder you pick once and it remembers from then on.
 
 ## Supported sites
 
