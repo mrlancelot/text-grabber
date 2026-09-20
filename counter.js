@@ -1,6 +1,8 @@
-export async function nextFilename() {
-  const { tgFileCounter = 0 } = await chrome.storage.local.get("tgFileCounter");
-  const next = tgFileCounter + 1;
-  await chrome.storage.local.set({ tgFileCounter: next });
-  return `${next}.txt`;
+export async function nextFilename(dirHandle) {
+  let max = 0;
+  for await (const name of dirHandle.keys()) {
+    const match = /^(\d+)\.txt$/.exec(name);
+    if (match) max = Math.max(max, parseInt(match[1], 10));
+  }
+  return `${max + 1}.txt`;
 }

@@ -15,16 +15,49 @@
         <strong>Save this job posting?</strong>
         <span class="tg-status">Grab the page text as a .txt file</span>
       </div>
-      <button class="tg-save">Save</button>
+      <div class="tg-actions">
+        <button class="tg-save">Save</button>
+        <button class="tg-analyze">Analyze this job</button>
+      </div>
       <button class="tg-close" title="Dismiss">×</button>
     `;
     (document.body || document.documentElement).appendChild(el);
 
     const statusEl = el.querySelector(".tg-status");
     const saveBtn = el.querySelector(".tg-save");
+    const analyzeBtn = el.querySelector(".tg-analyze");
     const closeBtn = el.querySelector(".tg-close");
 
     closeBtn.addEventListener("click", () => el.remove());
+
+    analyzeBtn.addEventListener("click", () => {
+      statusEl.textContent = "Analyzing with Gemini Nano…";
+      analyzeBtn.disabled = true;
+      chrome.runtime.sendMessage(
+        {
+          type: "TG_EXTRACT_JD",
+          text: extractPageText(),
+          url: location.href,
+        },
+        (response) => {
+          analyzeBtn.disabled = false;
+          if (chrome.runtime.lastError) {
+            statusEl.textContent = "Error — try again";
+            return;
+          }
+          if (response && response.ok) {
+            const jd = response.jdStructured;
+            statusEl.textContent = `Found: ${jd.title || "role"} at ${jd.company || "company"}`;
+          } else if (response && response.status === "unavailable") {
+            statusEl.textContent = `Gemini Nano isn't available: ${response.reason || "unsupported device."}`;
+          } else if (response && response.status === "downloading") {
+            statusEl.textContent = "Gemini Nano is still downloading on this device. Try again shortly.";
+          } else {
+            statusEl.textContent = response?.reason || "Could not analyze — try again";
+          }
+        }
+      );
+    });
 
     saveBtn.addEventListener("click", () => {
       if (el.classList.contains("tg-saved")) return;

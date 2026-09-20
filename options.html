@@ -34,6 +34,9 @@
       margin-bottom: 16px;
       display: none;
     }
+    hr { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
+    #profileStatus { margin-top: 12px; font-size: 13px; color: #4b5563; white-space: pre-wrap; }
+    #profileName { font-weight: 600; color: #16a34a; }
   </style>
 </head>
 <body>
@@ -42,6 +45,14 @@
   <div id="pendingNotice">A job posting is waiting to be saved. Choose/confirm your folder below.</div>
   <button id="chooseBtn">Choose save folder</button>
   <div id="status"></div>
+
+  <hr />
+
+  <h1>AI Profile (Gemini Nano)</h1>
+  <p id="profileSummary">No profile loaded yet.</p>
+  <button id="loadProfileBtn">Load profile from Markdown</button>
+  <div id="profileStatus"></div>
+
   <script type="module" src="options.js"></script>
 </body>
 </html>

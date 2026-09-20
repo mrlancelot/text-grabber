@@ -60,6 +60,21 @@
   background: #16a34a;
 }
 
+#tg-popup .tg-analyze {
+  background: #3b82f6;
+  color: #0b1220;
+}
+
+#tg-popup .tg-analyze:hover {
+  background: #2563eb;
+}
+
+#tg-popup .tg-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 #tg-popup .tg-close {
   color: #9ca3af;
   font-size: 16px;
