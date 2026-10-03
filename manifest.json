@@ -2,19 +2,31 @@
   "manifest_version": 3,
   "name": "Text Grabber",
   "version": "1.0.0",
-  "description": "Auto-popup on job posting pages to save the page text to a folder you choose.",
+  "description": "Save job postings and autofill applications from your profile, with on-device Gemini Nano.",
   "options_page": "options.html",
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
   "action": {
-    "default_title": "Text Grabber — click to open settings",
+    "default_title": "Text Grabber — click to open settings (Alt+Shift+F autofills)",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "autofill": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "Autofill the application form on this page"
     }
   },
   "host_permissions": [
@@ -29,7 +41,8 @@
     "*://*.icims.com/*",
     "*://apply.workable.com/*",
     "*://*.bamboohr.com/*",
-    "*://jobs.jobvite.com/*"
+    "*://jobs.jobvite.com/*",
+    "*://*.myworkdaysite.com/*"
   ],
   "content_scripts": [
     {
@@ -46,11 +59,31 @@
         "*://*.icims.com/jobs/*",
         "*://apply.workable.com/*",
         "*://*.bamboohr.com/careers/*",
-        "*://jobs.jobvite.com/*"
+        "*://jobs.jobvite.com/*",
+        "*://*.myworkdaysite.com/*"
       ],
-      "js": ["content-script.js"],
-      "css": ["popup.css"],
-      "run_at": "document_idle"
+      "js": [
+        "content-script.js"
+      ],
+      "css": [
+        "popup.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "autofill/*.js",
+        "lib/*.js",
+        "ui/*.css",
+        "ui/*.js",
+        "ui/fonts/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "icons": {

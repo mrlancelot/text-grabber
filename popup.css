@@ -1,92 +1,25 @@
-#tg-popup {
-  all: initial;
-  position: fixed !important;
-  bottom: 24px !important;
-  right: 24px !important;
-  top: auto !important;
-  left: auto !important;
-  z-index: 2147483647 !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #1f2937;
-  color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 320px;
-  animation: tg-slide-in 0.25s ease-out;
+.tg-mark, .tg-pending {
+  outline: 1px solid #111 !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--tg-ring);
+  transition: box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@keyframes tg-slide-in {
-  from { transform: translateY(16px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+.tg-mark[data-tg-status="filled"] { --tg-ring: #06d6a0; }
+.tg-mark[data-tg-status="review"] { --tg-ring: #ffd166; }
+.tg-mark[data-tg-status="needs"] { --tg-ring: #ff7f50; }
+
+.tg-pending {
+  --tg-ring: #118ab2;
+  outline-style: dashed !important;
+  animation: tg-breathe 1.4s ease-in-out infinite;
 }
 
-#tg-popup .tg-icon {
-  font-size: 20px;
-  line-height: 1;
-}
+.tg-jump { animation: tg-pulse 0.6s ease-out 2; }
 
-#tg-popup .tg-text {
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.4;
-}
+@keyframes tg-breathe { 50% { box-shadow: 0 0 0 6px transparent; } }
+@keyframes tg-pulse { 50% { outline-offset: 8px; } }
 
-#tg-popup .tg-text strong {
-  display: block;
-  font-size: 14px;
-  margin-bottom: 2px;
-}
-
-#tg-popup button {
-  all: unset;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 6px 10px;
-  border-radius: 6px;
-  text-align: center;
-}
-
-#tg-popup .tg-save {
-  background: #22c55e;
-  color: #0b1a0f;
-}
-
-#tg-popup .tg-save:hover {
-  background: #16a34a;
-}
-
-#tg-popup .tg-analyze {
-  background: #3b82f6;
-  color: #0b1220;
-}
-
-#tg-popup .tg-analyze:hover {
-  background: #2563eb;
-}
-
-#tg-popup .tg-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-#tg-popup .tg-close {
-  color: #9ca3af;
-  font-size: 16px;
-  padding: 2px 6px;
-}
-
-#tg-popup .tg-close:hover {
-  color: #ffffff;
-}
-
-#tg-popup.tg-saved .tg-save {
-  background: #374151;
-  color: #9ca3af;
-  cursor: default;
+@media (prefers-reduced-motion: reduce) {
+  .tg-pending, .tg-jump { animation: none; }
 }

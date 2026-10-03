@@ -1,0 +1,37 @@
+:root, :host {
+  --yellow: #ffd166;
+  --blue: #118ab2;
+  --green: #06d6a0;
+  --red: #ff7f50;
+  --label: #111;
+  --label-2: #555;
+  --label-3: #767676;
+  --cell: #fff;
+  --bg: #ededed;
+  --fill: #f2f2f2;
+  --line: 1px solid var(--label);
+  --dash: 1px dashed var(--label);
+  --radius: 16px;
+  --font: "TG Plex", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "TG Unbounded", "Unbounded", system-ui, -apple-system, sans-serif;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 180ms;
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root, :host { --dur: 0ms; }
+}
+
+.large-title { font: 600 28px/1.1 var(--font-display); letter-spacing: -0.02em; }
+.title1 { font: 600 22px/1.15 var(--font-display); letter-spacing: -0.02em; }
+.title2 { font: 600 17px/1.2 var(--font-display); letter-spacing: -0.01em; }
+.title3 { font: 600 14px/1.25 var(--font-display); }
+.headline { font: 500 13px/16px var(--font); }
+.body { font: 400 13px/17px var(--font); }
+.callout { font: 400 12.5px/17px var(--font); }
+.footnote { font: 400 11.5px/15px var(--font); }
+.caption { font: 500 10.5px/13px var(--font); text-transform: uppercase; letter-spacing: 0.04em; }
+.secondary { color: var(--label-2); }
+.tertiary { color: var(--label-3); }
+.tabular { font-variant-numeric: tabular-nums; }
