@@ -1,5 +1,5 @@
 import { detectFields, hasValue, comboboxValue } from "./detect.js";
-import { exactKey, signature, matchOption, matchText, isOpenQuestion, findLearnedExact, rankLearned, bestKey, isYesNo, sharesWord } from "./match.js";
+import { exactKey, signature, matchOption, matchText, isOpenQuestion, findLearnedExact, rankLearned, bestKey, isYesNo, sharesWord, normalize } from "./match.js";
 import { buildValues, catalog, CHOICE_KEYS, CHOICE_LABELS, FILE_KEYS, FIELD_KEYS } from "./keys.js";
 import { fillText, fillSelect, fillRadio, fillCheckboxes, fillButton, fillFile, fillCombobox, highlight, clearHighlights, markPending, jump } from "./fill.js";
 import { ready, log, table } from "../lib/log.js";
@@ -7,6 +7,7 @@ import { ready, log, table } from "../lib/log.js";
 const CUSTOM = new Set(["none", "freeText"]);
 const OPTION_KINDS = new Set(["select", "radio", "checkboxes", "buttons"]);
 const CACHE = "tgFieldCache";
+const USER_MAP = "tgFieldUser";
 
 function send(message) {
   return new Promise((resolve) => {
@@ -33,15 +34,17 @@ const state = {
   cursor: { filled: -1, review: -1, needs: -1 },
   done: 0,
   total: 0,
+  current: Promise.resolve(),
 };
 
 async function load() {
   await ready;
-  const [data, stored] = await Promise.all([send({ type: "TG_GET_FILL_DATA" }), chrome.storage.local.get(CACHE)]);
+  const [data, stored] = await Promise.all([send({ type: "TG_GET_FILL_DATA" }), chrome.storage.local.get([CACHE, USER_MAP])]);
   state.data = data;
   state.values = buildValues(data.profile, data.answers);
   state.catalog = catalog(state.values, !!data.resume);
   state.cache = stored[CACHE] || {};
+  state.userMap = stored[USER_MAP] || {};
   state.resume = data.resume ? base64ToFile(data.resume) : null;
   log("Data", { nano: data.nano, catalog: Object.keys(state.catalog), learned: data.learned.length, cached: Object.keys(state.cache).length });
 }
@@ -52,13 +55,14 @@ function live() {
 
 function summary() {
   const counts = { filled: 0, review: 0, needs: 0 };
-  for (const r of live()) counts[r.status]++;
+  for (const r of live()) if (r.status in counts) counts[r.status]++;
   return counts;
 }
 
 const NEEDS_REASON = {
   "no saved value": "Not in your profile",
   "no saved answer": "No saved answer yet",
+  "ai off": "AI off on this device",
   "no option matched": "No option fits your answer",
   "site rejected value": "The site didn't accept it",
   "dropdown never opened": "Couldn't open the menu",
@@ -69,17 +73,19 @@ const REVIEW_REASON = {
   draft: "Written by AI",
   "ai choice": "Chosen by AI",
   "saved answer (nano)": "Similar saved answer",
+  "similar saved answer": "Similar saved answer",
+  summary: "From your profile summary",
 };
 
 function reasonOf(d, status) {
-  if (status === "needs") return NEEDS_REASON[d.trace?.reason] || "Needs your input";
+  if (status === "needs" || status === "skipped") return NEEDS_REASON[d.trace?.reason] || "Needs your input";
   return REVIEW_REASON[d.trace?.via] || (d.trace?.option === "nano" ? "Option chosen by AI" : "Matched by AI");
 }
 
 function progress() {
   const items = live()
     .filter((r) => r.status !== "filled")
-    .sort((a, b) => (a.status === "needs" ? -1 : 0) - (b.status === "needs" ? -1 : 0))
+    .sort((a, b) => (a.status === "needs" ? -1 : a.status === "skipped" ? 1 : 0) - (b.status === "needs" ? -1 : b.status === "skipped" ? 1 : 0))
     .map((r) => ({ uid: r.desc.uid, label: r.desc.label, status: r.status, reason: reasonOf(r.desc, r.status) }));
   state.onProgress({ counts: summary(), items, done: state.done, total: state.total });
 }
@@ -88,7 +94,7 @@ function record(d, status) {
   state.done++;
   if (status) {
     state.results.push({ desc: d, status });
-    highlight(d, status);
+    if (status !== "skipped") highlight(d, status);
   }
   progress();
 }
@@ -117,6 +123,8 @@ function fieldLine(d) {
     .join(" | ");
 }
 
+const hint = (d) => [d.label, d.name, d.id, d.placeholder].join(" ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+
 function resumeTarget(fields) {
   const files = fields.filter((d) => d.kind === "file");
   return files.find((d) => /^(resume|cv)\b/i.test(d.label)) || files[0];
@@ -140,11 +148,14 @@ function decideFast(fields) {
     }
     d.choices = choicesFor(d);
     const exact = exactKey(d);
-    const cached = state.cache[signature(d)];
-    const winner = exact || d.kind === "textarea" ? null : bestKey(d.label, shapeKeys(d));
-    if (exact) set(exact, "shape");
+    const sig = signature(d);
+    const cached = state.cache[sig];
+    const user = state.userMap[sig];
+    const winner = exact ? null : bestKey(hint(d), d.kind === "textarea" ? ["summary"] : shapeKeys(d));
+    if (user && state.catalog[user]) set(user, "learned");
+    else if (exact) set(exact, "shape");
+    else if (winner) set(state.catalog[winner] ? winner : d.kind === "textarea" ? "freeText" : "none", state.catalog[winner] ? "match" : `match: ${winner}, not saved`);
     else if (d.kind === "textarea") set("freeText", "shape");
-    else if (winner) set(state.catalog[winner] ? winner : "none", state.catalog[winner] ? "match" : `match: ${winner}, not saved`);
     else if (cached && (cached === "none" || d.choices.includes(cached))) set(cached, "cache");
     else if (!d.choices.length) set("none", "no candidates");
     else pending.push(d);
@@ -172,7 +183,7 @@ function getJd() {
 
 function fail(d, reason) {
   d.trace.reason = reason;
-  return d.required ? "needs" : null;
+  return d.required ? "needs" : reason === "ai off" ? "skipped" : null;
 }
 
 async function fillValue(d, key, value) {
@@ -206,8 +217,11 @@ async function fillCustom(d) {
   const learned = state.data.learned;
   let hit = findLearnedExact(d.label, learned);
   let fuzzy = false;
-  if (!hit && state.data.nano) {
-    const candidates = rankLearned(d.label, learned);
+  const candidates = hit ? [] : rankLearned(d.label, learned);
+  if (candidates[0]?.score >= 0.7) {
+    hit = candidates[0];
+    fuzzy = "similar saved answer";
+  } else if (!hit && state.data.nano) {
     if (candidates.length) {
       const res = await send({
         type: "TG_MATCH_SAVED_ANSWER",
@@ -215,11 +229,11 @@ async function fillCustom(d) {
         candidates: candidates.map((c) => ({ id: c.id, questionText: c.questionText })),
       });
       hit = learned.find((l) => l.id === res?.id) || null;
-      fuzzy = !!hit;
+      fuzzy = hit && "saved answer (nano)";
     }
   }
   if (hit) {
-    Object.assign(d.trace, { value: hit.answer, via: fuzzy ? "saved answer (nano)" : "saved answer" });
+    Object.assign(d.trace, { value: hit.answer, via: fuzzy || "saved answer" });
     if (await fillValue(d, null, hit.answer)) return fuzzy || d.kind === "textarea" ? "review" : "filled";
   }
 
@@ -232,7 +246,7 @@ async function fillCustom(d) {
   }
 
   const wantsDraft = d.kind === "textarea" ? d.required || /\?|\b(why|describe|tell us|explain)\b/i.test(d.label) : isOpenQuestion(d);
-  if (wantsDraft && state.data.nano && state.data.profile) {
+  if (wantsDraft && state.data.profile) {
     const maxLength = d.el.maxLength > 0 ? d.el.maxLength : 0;
     const res = await send({ type: "TG_DRAFT_ANSWER", question: d.label, jd: await getJd(), maxLength, url: location.href });
     if (res?.text) {
@@ -240,7 +254,7 @@ async function fillCustom(d) {
       if (await fillText(d.el, res.text)) return "review";
     }
   }
-  return fail(d, hit ? "saved answer didn't fit" : "no saved answer");
+  return fail(d, hit ? "saved answer didn't fit" : state.data.nano ? "no saved answer" : "ai off");
 }
 
 async function fillField(d) {
@@ -251,7 +265,8 @@ async function fillField(d) {
   if (value == null || value === "") return fail(d, "no saved value");
   d.trace.value = value;
   if (!(await fillValue(d, d.key, value))) return fail(d, d.trace.reason || "site rejected value");
-  return d.source === "nano" || d.trace.option === "nano" ? "review" : "filled";
+  if (d.key === "summary") d.trace.via = "summary";
+  return d.source === "nano" || d.trace.option === "nano" || d.key === "summary" ? "review" : "filled";
 }
 
 function readAnswer(d) {
@@ -282,7 +297,12 @@ function watch(d) {
       if (!answer || answer === d.filledAnswer || answer === d.savedAnswer) return;
       d.savedAnswer = answer;
       const sig = signature(d);
-      if (CUSTOM.has(d.key)) {
+      const profileKey = Object.keys(state.catalog).find((k) => !FILE_KEYS.includes(k) && !CHOICE_KEYS[k] && String(state.values[k]).length > 3 && normalize(state.values[k]) === normalize(answer));
+      if (profileKey && profileKey !== d.key) {
+        state.userMap[sig] = profileKey;
+        chrome.storage.local.set({ [USER_MAP]: state.userMap });
+        log("Learned mapping", { label: d.label, key: profileKey });
+      } else if (CUSTOM.has(d.key)) {
         send({ type: "TG_SAVE_LEARNED", questionText: d.label, answer, kind: d.kind, options: d.options });
         log("Learned", { label: d.label, answer });
       } else if (d.filledAnswer && state.cache[sig]) {
@@ -328,7 +348,10 @@ async function pass() {
     state.seen.add(d.el);
     d.skip = !d.label ? "no label" : hasValue(d) ? "already filled" : "";
   }
-  if (!fields.length) return 0;
+  if (!fields.length) {
+    state.onStatus("Nothing left to fill. Everything here already has a value.", false);
+    return 0;
+  }
   table(
     "Detected",
     fields.map((d) => ({ uid: d.uid, kind: d.kind, label: d.label, section: d.section, options: d.options.join(" / "), required: d.required, skip: d.skip }))
@@ -349,7 +372,7 @@ async function pass() {
     markPending(d, false);
   };
   for (const d of pending) {
-    state.onStatus(`Thinking about “${d.label.slice(0, 36)}”`, true);
+    if (state.data.nano) state.onStatus(`Thinking about “${d.label.slice(0, 36)}”`, true);
     markPending(d, true);
     await decideNano(d);
     if (!CUSTOM.has(d.key)) await fillOne(d);
@@ -357,7 +380,7 @@ async function pass() {
   }
   const custom = todo.filter((d) => CUSTOM.has(d.key));
   for (const [i, d] of custom.entries()) {
-    await slow(d, d.kind === "textarea" ? `Writing answer ${i + 1} of ${custom.length}` : `Answering “${d.label.slice(0, 36)}”`);
+    await slow(d, !state.data.nano ? "Checking your saved answers" : d.kind === "textarea" ? `Writing answer ${i + 1} of ${custom.length}` : `Answering “${d.label.slice(0, 36)}”`);
   }
   await recheck(todo);
   todo.forEach(watch);
@@ -369,19 +392,25 @@ async function pass() {
 
 export async function autofill({ onProgress, onStatus } = {}) {
   if (!chrome.runtime?.id) return { ...summary(), stale: true };
-  if (state.running) return summary();
+  await state.current;
   state.running = true;
   state.onProgress = onProgress || (() => {});
   state.onStatus = onStatus || (() => {});
-  try {
-    await load();
-    const found = await pass();
-    if (found === 0 && state.results.length === 0) return { ...summary(), empty: true };
-    startWatching();
-    return summary();
-  } finally {
-    state.running = false;
-  }
+  const run = (async () => {
+    try {
+      await load();
+      Object.assign(state, { seen: new WeakSet(), results: [], done: 0, total: 0, cursor: { filled: -1, review: -1, needs: -1 } });
+      clearHighlights();
+      const found = await pass();
+      if (found === 0 && state.results.length === 0) return { ...summary(), empty: true };
+      startWatching();
+      return summary();
+    } finally {
+      state.running = false;
+    }
+  })();
+  state.current = run.catch(() => {});
+  return run;
 }
 
 function startWatching() {
@@ -393,14 +422,17 @@ function startWatching() {
       if (!chrome.runtime?.id) return stop();
       if (state.running) return;
       state.running = true;
-      try {
-        await pass();
-      } finally {
-        state.running = false;
-      }
+      state.current = pass()
+        .catch(() => {})
+        .finally(() => (state.running = false));
     }, 800);
   });
   state.observer.observe(document.body, { childList: true, subtree: true });
+}
+
+export async function attachResume(file) {
+  const target = resumeTarget(detectFields());
+  return !!target && (await fillFile(target.el, base64ToFile(file)));
 }
 
 export function stop() {

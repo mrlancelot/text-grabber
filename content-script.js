@@ -54,6 +54,8 @@
             <button class="close" aria-label="Close"></button>
           </header>
           <div class="body">
+          <div class="signals" hidden><div class="chips-row"></div><ul class="warnings" hidden></ul></div>
+          <div class="dup callout" hidden></div>
           <div class="progress" hidden><div class="bar"></div></div>
           <div class="status callout" aria-live="polite"><span class="text"></span></div>
           <div class="summary group" hidden>
@@ -64,8 +66,9 @@
           <button class="btn prominent large wide autofill">Autofill</button>
           <div class="actions">
             <button class="btn plain save">Save Job</button>
-            <button class="btn plain analyze">Analyze Job</button>
+            <button class="btn plain tailor"><span>Tailor Resume</span></button>
           </div>
+          <div class="resume" hidden><span class="callout name"></span><a class="btn download">Download</a></div>
           <footer class="caption secondary"><span>Runs on this device</span></footer>
           </div>
         </div>
@@ -79,15 +82,16 @@
     const hud = $(".hud");
     const autofillBtn = $(".autofill");
     const saveBtn = $(".save");
-    const analyzeBtn = $(".analyze");
     const statusText = $(".status .text");
     const spinner = icon("spinner", "spinner");
     let isForm = false;
 
     $(".close").append(icon("xmark"));
     saveBtn.prepend(icon("doc"));
-    analyzeBtn.prepend(icon("sparkles"));
     $("footer").prepend(icon("lock"));
+    send({ type: "TG_NANO_STATUS" }).then((ai) => {
+      if (ai && ai.status !== "ok") $("footer span").textContent = "AI off on this device · filling from your saved data";
+    });
     $(".subtitle").textContent = location.hostname.replace(/^www\./, "");
 
     const expand = () => (hud.dataset.state = "card");
@@ -113,7 +117,7 @@
       $(".pill-label").textContent = form ? "Autofill" : "Save Job";
       $(".title").textContent = form ? "Autofill" : "Save this job";
       autofillBtn.hidden = !form;
-      setStatus(form ? "Fill this application from your profile." : "Save the posting or analyze it on-device.", false);
+      setStatus(form ? "Fill this application from your profile." : "Save the posting to your jobs folder.", false);
       if (form) loadAutofill().then((m) => m.warmUp()).catch(() => {});
     }
 
@@ -173,6 +177,7 @@
         if (counts.empty) setStatus("No form fields found here.", false);
         $(".bar").style.width = "100%";
         autofillBtn.textContent = "Fill Again";
+        offerApplied();
       } catch (err) {
         setStatus(`Autofill failed: ${err && err.message ? err.message : err}`, false);
       } finally {
@@ -182,28 +187,13 @@
 
     autofillBtn.addEventListener("click", runAutofill);
 
-    analyzeBtn.addEventListener("click", async () => {
-      if (stale()) return;
-      analyzeBtn.disabled = true;
-      setStatus("Reading the job posting", true);
-      const response = await send({ type: "TG_EXTRACT_JD", text: extractPageText(), url: location.href });
-      analyzeBtn.disabled = false;
-      if (response?.ok) {
-        const jd = response.jdStructured;
-        $(".subtitle").textContent = [jd.company, jd.title].filter(Boolean).join(" · ");
-        setStatus(isForm ? "Fill this application from your profile." : "Job analyzed.", false);
-        banner(`${jd.title || "Role"} at ${jd.company || "this company"}`);
-      } else {
-        setStatus(response?.status === "downloading" ? "The on-device model is still downloading." : response?.reason || "Couldn't analyze this page.", false);
-      }
-    });
-
     saveBtn.addEventListener("click", async () => {
       if (stale()) return;
       saveBtn.disabled = true;
       setStatus("Saving", true);
-      const response = await send({ type: "TG_SAVE_TEXT", text: extractPageText() });
-      setStatus(isForm ? "Fill this application from your profile." : "Save the posting or analyze it on-device.", false);
+      const { readJob } = await import(url("lib/jobpage.js"));
+      const response = await send({ type: "TG_SAVE_TEXT", text: extractPageText(), url: location.href, job: readJob() });
+      setStatus(isForm ? "Fill this application from your profile." : "Save the posting to your jobs folder.", false);
       if (response?.ok) return banner(`Saved to ${response.folderName || "your folder"}`);
       saveBtn.disabled = false;
       setStatus(response?.needsFolder ? "Choose a folder in the tab that just opened." : response?.error || "Couldn't save — try again.", false);
@@ -219,6 +209,89 @@
       });
       watcher.observe(document.body, { childList: true, subtree: true });
     }
+
+    const tailorBtn = $(".tailor");
+    const tailorLabel = tailorBtn.querySelector("span");
+    tailorBtn.prepend(icon("sparkles"));
+
+    function showResume(file) {
+      const link = $(".download");
+      if (link.href) URL.revokeObjectURL(link.href);
+      link.href = URL.createObjectURL(new Blob([Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0))], { type: file.type }));
+      link.download = file.name;
+      $(".resume .name").textContent = file.name;
+      $(".resume").hidden = false;
+      tailorLabel.textContent = "Re-tailor Resume";
+    }
+
+    tailorBtn.addEventListener("click", async () => {
+      if (stale()) return;
+      tailorBtn.disabled = true;
+      tailorLabel.textContent = "Tailoring…";
+      setStatus("Tailoring your resume to this job", true);
+      const { readJob } = await import(url("lib/jobpage.js"));
+      const response = await send({ type: "TG_TAILOR", url: location.href, job: readJob() });
+      tailorBtn.disabled = false;
+      if (!response?.ok) {
+        tailorLabel.textContent = "Tailor Resume";
+        return setStatus("Couldn't tailor. Set up your profile in settings first.", false);
+      }
+      showResume(response.file);
+      const attached = isForm && (await (await loadAutofill()).attachResume(response.file));
+      setStatus(attached ? "Tailored resume attached to the form." : "Tailored resume ready. Download it to review.", false);
+    });
+
+    send({ type: "TG_GET_TAILORED", url: location.href }).then((file) => file && showResume(file));
+
+    const STATUS_TEXT = { applied: "You applied", interview: "You're interviewing for this job", offer: "You have an offer for this job", rejected: "You were turned down for this job" };
+
+    function chip(text, className = "") {
+      const node = document.createElement(className ? "button" : "span");
+      node.className = `chip ${className}`.trim();
+      node.textContent = text;
+      return node;
+    }
+
+    async function jobInfo() {
+      const [{ readJob }, { jobSignals }] = await Promise.all([import(url("lib/jobpage.js")), import(url("lib/signals.js"))]);
+      const job = readJob();
+      if (!job.title) return;
+      const { chips, warnings } = jobSignals(job);
+      const nodes = chips.map((t) => chip(t));
+      if (warnings.length) {
+        const warn = chip(`${warnings.length} warning sign${warnings.length > 1 ? "s" : ""}`, "warn");
+        const list = $(".warnings");
+        list.replaceChildren(...warnings.map((w) => Object.assign(document.createElement("li"), { textContent: w })));
+        warn.addEventListener("click", () => (list.hidden = !list.hidden));
+        nodes.push(warn);
+      }
+      $(".chips-row").replaceChildren(...nodes);
+      $(".signals").hidden = !nodes.length;
+      const dup = await send({ type: "TG_CHECK_DUPLICATE", url: location.href, title: job.title, company: job.company });
+      if (!dup) return;
+      const date = new Date(dup.savedAt).toLocaleDateString();
+      $(".dup").textContent = STATUS_TEXT[dup.status]
+        ? `${STATUS_TEXT[dup.status]} · saved ${date}${dup.sameUrl ? "" : ` on ${dup.host}`}`
+        : `You saved this job on ${date}${dup.sameUrl ? "" : ` on ${dup.host}`}`;
+      $(".dup").hidden = false;
+    }
+
+    async function offerApplied() {
+      const { readJob } = await import(url("lib/jobpage.js"));
+      const job = readJob();
+      const dup = await send({ type: "TG_CHECK_DUPLICATE", url: location.href, title: job.title, company: job.company });
+      if (dup && dup.status !== "saved") return;
+      const box = $(".dup");
+      const mark = Object.assign(document.createElement("button"), { className: "btn plain", textContent: "Mark as applied" });
+      mark.addEventListener("click", async () => {
+        const response = await send({ type: "TG_SET_STATUS", id: dup?.id, url: location.href, job, status: "applied" });
+        if (response?.ok) box.textContent = "Marked as applied. You'll get follow-up reminders after 7 and 14 days.";
+      });
+      box.replaceChildren(document.createTextNode("Submitted it? "), mark);
+      box.hidden = false;
+    }
+
+    if (window.top === window) jobInfo();
 
     return { runAutofill };
   }

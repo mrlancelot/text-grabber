@@ -100,6 +100,15 @@ export async function getApplication(id) {
   });
 }
 
+export async function listApplications() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(APPLICATIONS_STORE, "readonly").objectStore(APPLICATIONS_STORE).getAll();
+    req.onsuccess = () => resolve((req.result || []).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt))));
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function findApplicationByUrl(url) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -110,6 +119,17 @@ export async function findApplicationByUrl(url) {
       resolve(matches.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)))[0] || null);
     };
     req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteApplication(id) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([APPLICATIONS_STORE, FILES_STORE], "readwrite");
+    tx.objectStore(APPLICATIONS_STORE).delete(id);
+    tx.objectStore(FILES_STORE).delete(`resume:${id}`);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -194,4 +214,47 @@ export function getFile(key) {
 
 export function setFile(key, file) {
   return putValue(FILES_STORE, file, key);
+}
+
+export const BACKUP_STORES = [PROFILE_STORE, APPLICATIONS_STORE, ANSWERS_STORE, LEARNED_STORE, FILES_STORE];
+
+export async function readStore(name) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const entries = [];
+    const req = db.transaction(name, "readonly").objectStore(name).openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) return resolve(entries);
+      entries.push({ key: cursor.primaryKey, value: cursor.value });
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function replaceStores(data) {
+  const db = await openDb();
+  const names = Object.keys(data);
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(names, "readwrite");
+    for (const name of names) {
+      const store = tx.objectStore(name);
+      store.clear();
+      for (const { key, value } of data[name]) store.keyPath ? store.put(value) : store.put(value, key);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function clearAllStores() {
+  const db = await openDb();
+  const names = [...db.objectStoreNames];
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(names, "readwrite");
+    for (const name of names) tx.objectStore(name).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }

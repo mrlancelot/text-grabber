@@ -8,13 +8,22 @@ import {
   listLearned,
   putLearned,
   getFile,
+  setFile,
+  getApplication,
+  listApplications,
+  deleteApplication,
 } from "./idb.js";
 import { nextFilename } from "./counter.js";
-import { runStructured, checkAvailability, askStructured, askText, warmUp } from "./ai.js";
+import { checkAvailability, ask, warmUp } from "./ai.js";
 import { jobDescriptionSchema } from "./schemas.js";
-import { log } from "./lib/log.js";
+import { tailorResume } from "./tailor.js";
 import { FIELD_KEYS, CHOICE_LABELS } from "./autofill/keys.js";
 import { normalize } from "./autofill/match.js";
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.storage.local.remove(["tgCorpus", "tgVerdicts", "tgAutoAnalyze"]);
+  for (const app of await listApplications()) if (app.status !== "saved") await deleteApplication(app.id);
+});
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -59,19 +68,6 @@ const CHOICE_PROMPT =
 const JD_PROMPT =
   "You extract structured job posting data from raw job listing page text. Only use facts present in the text — never invent requirements or details.";
 
-function choiceSizes(schema) {
-  if (!schema) return undefined;
-  if (schema.enum) return schema.enum.length;
-  return Object.fromEntries(Object.entries(schema.properties || {}).map(([k, v]) => [k, v.enum?.length]));
-}
-
-async function ask(task, system, text, schema) {
-  const t0 = performance.now();
-  const output = schema ? await askStructured(system, text, schema) : await askText(system, text);
-  log(`nano:${task}`, { ms: Math.round(performance.now() - t0), input: text, choices: choiceSizes(schema), output });
-  return output;
-}
-
 async function nanoReady() {
   return (await checkAvailability()).status === "ok";
 }
@@ -85,12 +81,17 @@ function toBase64(buffer) {
   return btoa(bin);
 }
 
-async function getFillData() {
+async function resumeFor(url) {
+  const app = url && (await findApplicationByUrl(url));
+  return (app && (await getFile(`resume:${app.id}`))) || getFile("resume");
+}
+
+async function getFillData(message, sender) {
   const [profile, answers, learned, resume, nano] = await Promise.all([
     getProfile(),
     getAnswers(),
     listLearned(),
-    getFile("resume"),
+    resumeFor(sender?.tab?.url),
     nanoReady(),
   ]);
   return {
@@ -98,7 +99,7 @@ async function getFillData() {
     answers: answers || {},
     learned,
     nano,
-    resume: resume ? { name: resume.name, type: resume.type, base64: toBase64(await resume.blob.arrayBuffer()) } : null,
+    resume: await fileData(resume),
   };
 }
 
@@ -169,21 +170,63 @@ async function getJd({ url, text }) {
   const existing = await findApplicationByUrl(url);
   if (existing?.jdStructured) return existing;
   if (!text || !(await nanoReady())) return null;
-  const result = await ask("jd", JD_PROMPT, text.slice(0, 4000), jobDescriptionSchema);
+  let result = await ask("jd", JD_PROMPT, text.slice(0, 8000), jobDescriptionSchema);
+  if (result === "too-long") result = await ask("jd", JD_PROMPT, text.slice(0, 4000), jobDescriptionSchema);
   if (!result || result === "too-long") return null;
-  return createApplication({
-    url,
-    savedAt: new Date().toISOString(),
-    jdRaw: text,
-    jdStructured: result,
-    tailoredResume: null,
-    status: "extracted",
-  });
+  return { jdStructured: result };
 }
+
+async function saveApplication(url, job) {
+  const existing = await findApplicationByUrl(url);
+  const { text, ...jdStructured } = job;
+  if (existing) {
+    await updateApplication(existing.id, { jdStructured, status: "saved" });
+    return { ...existing, jdStructured, status: "saved" };
+  }
+  const savedAt = new Date().toISOString();
+  return createApplication({ url, savedAt, jdRaw: text, jdStructured, tailoredResume: null, status: "saved", history: [{ status: "saved", at: savedAt }] });
+}
+
+const DAY = 86400000;
+const FOLLOW_UPS = [7, 14];
+
+async function setStatus(app, status) {
+  const history = [...(app.history || [{ status: "saved", at: app.savedAt }]), { status, at: new Date().toISOString() }];
+  await updateApplication(app.id, { status, history });
+  for (const days of FOLLOW_UPS) {
+    const name = `tg-follow:${app.id}:${days}`;
+    if (status === "applied") chrome.alarms.create(name, { when: Date.now() + days * DAY });
+    else chrome.alarms.clear(name);
+  }
+  return { ...app, status, history };
+}
+
+chrome.alarms.onAlarm.addListener(async ({ name }) => {
+  const [, id, days] = name.split(":");
+  const app = name.startsWith("tg-follow:") && (await getApplication(id));
+  if (app?.status !== "applied") return;
+  const jd = app.jdStructured || {};
+  chrome.notifications.create(name, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: "Time to follow up?",
+    message: `It's been ${days} days since you applied to ${[jd.title, jd.company].filter(Boolean).join(" at ") || "this job"}.`,
+  });
+});
+
+chrome.notifications.onClicked.addListener((id) => {
+  if (id.startsWith("tg-follow:")) chrome.tabs.create({ url: chrome.runtime.getURL("options.html#applications") });
+});
+
+const plain = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const jobKey = (company, title) => (plain(company) && plain(title) ? `${plain(company)}|${plain(title)}` : "");
+
+const fileData = async (file) => file && { name: file.name, type: file.type, base64: toBase64(await file.blob.arrayBuffer()) };
 
 async function draftAnswer({ question, jd, maxLength, url }) {
   const app = await findApplicationByUrl(url);
   if (app?.drafts?.[question]) return app.drafts[question];
+  if (!(await nanoReady())) return null;
   const profile = await getProfile();
   if (!profile) return null;
   const limit = maxLength > 0 ? `\nLIMIT: ${maxLength} characters` : "";
@@ -212,6 +255,7 @@ async function draftChoice({ question, options }) {
 
 const handlers = {
   async TG_SAVE_TEXT(message) {
+    if (message.job) await saveApplication(message.url, message.job);
     const handle = await getFolderHandle();
     if (handle) {
       const permission = await handle.queryPermission({ mode: "readwrite" });
@@ -226,19 +270,33 @@ const handlers = {
     return { ok: false, needsFolder: true };
   },
 
-  async TG_EXTRACT_JD(message) {
-    const result = await runStructured(JD_PROMPT, message.text, jobDescriptionSchema);
-    if (!result.ok) return { ok: false, status: result.status, reason: result.reason };
-    const record = await createApplication({
-      url: message.url,
-      savedAt: new Date().toISOString(),
-      jdRaw: message.text,
-      jdStructured: result.data,
-      tailoredResume: null,
-      status: "extracted",
-    });
-    return { ok: true, id: record.id, jdStructured: result.data };
+  async TG_TAILOR({ id, url, job }) {
+    const [found, profile] = await Promise.all([id ? getApplication(id) : findApplicationByUrl(url), getProfile()]);
+    const app = found || (job && (await saveApplication(url, job)));
+    if (!app?.jdStructured || !profile) return { ok: false };
+    const { resume, file } = await tailorResume(app, profile);
+    await setFile(`resume:${app.id}`, file);
+    await updateApplication(app.id, { tailoredResume: resume });
+    return { ok: true, file: await fileData(file) };
   },
+
+  async TG_SET_STATUS({ id, url, job, status }) {
+    const app = (id ? await getApplication(id) : await findApplicationByUrl(url)) || (job && (await saveApplication(url, job)));
+    if (!app) return { ok: false };
+    return { ok: true, status: (await setStatus(app, status)).status };
+  },
+
+  async TG_CHECK_DUPLICATE({ url, title, company }) {
+    const key = jobKey(company, title);
+    const app = (await listApplications()).find((a) => a.url === url || (key && jobKey(a.jdStructured?.company, a.jdStructured?.title) === key));
+    return app ? { id: app.id, savedAt: app.savedAt, status: app.status, host: new URL(app.url).hostname, sameUrl: app.url === url } : null;
+  },
+
+  async TG_GET_TAILORED({ url }) {
+    const app = await findApplicationByUrl(url);
+    return app ? fileData(await getFile(`resume:${app.id}`)) : null;
+  },
+
   async TG_NANO_STATUS() {
     return checkAvailability();
   },

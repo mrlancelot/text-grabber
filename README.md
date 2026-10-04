@@ -35,6 +35,87 @@ Click **Autofill** in the popup on an application form, or press **Alt+Shift+F**
 
 The form is never submitted. To see why a field was or wasn't filled, turn on **Debug logs** in settings: each step prints to the page console with a `[TG]` prefix, and each Gemini Nano call prints to the service worker console. Set up your profile (LinkedIn "Save to PDF" or Markdown), resume file and personal answers on the settings page. Answers you type into custom questions are saved and reused.
 
+## Tailored resumes (experimental)
+
+Click **Tailor Resume** on the on-page card.
+- Gemini Nano picks and orders your existing skills and bullets **by id**, so it can't invent any, and writes a short summary.
+- The job's title, company and requirements are read from the page structure (`lib/jobpage.js`), using `JobPosting` JSON-LD when present.
+- Every number and capitalized term in the summary must appear in your profile. Otherwise it retries once, then falls back to "{latest title} with {years} years of experience in {top skills}".
+
+The result is a single-column DOCX (`lib/docx.js`):
+- On an application form, it's **attached to the resume field right away**, without running Autofill.
+- The card shows the file name with a **Download** button so you can open and review it.
+- The job is saved to **Applications** with its tailored resume. Autofill on that job also uses the tailored file instead of your base resume.
+- **Re-tailor Resume** generates it again.
+
+**Applications** (settings) lists only the jobs you saved, using Save Job or Tailor Resume. From there you can open the posting, download or re-tailor the resume, or remove the job.
+
+## AI models
+
+**AI & Privacy → AI model** lists every model. A radio button picks which one autofill and tailoring use. All of them run on this device.
+
+- **Gemini Nano**
+  - Built into Chrome, about 4 GB, and shared with other sites and extensions.
+  - **Download** starts it from the settings page, because Chrome only allows that after a click, and shows its progress.
+  - Chrome manages Nano's storage. **Details** opens `chrome://on-device-internals`.
+- **Downloadable models** run through [WebLLM](https://github.com/mlc-ai/web-llm) on your GPU (WebGPU with 16-bit shader support):
+
+  | Model | Tier | Download |
+  |---|---|---|
+  | Qwen 2.5 0.5B | Fast | ~0.3 GB |
+  | Llama 3.2 1B | Balanced | ~0.7 GB |
+  | Llama 3.2 3B | Quality | ~1.8 GB |
+
+  - **Downloading:** the weights download once from Hugging Face into the browser cache, and **Delete** removes them.
+  - **Bundled code:** the engine code and each model's compiled library are bundled in `vendor/web-llm/`, because MV3 forbids remote code.
+  - **Where it runs:** inference runs in an offscreen document (`offscreen.html`), so the model stays loaded between requests.
+  - **Routing:** `ai.js` sends every request to whichever model is selected, with the same JSON-schema answers either way.
+
+## Without AI
+
+On devices that can't run any model, autofill still fills:
+- everything in your profile and personal answers;
+- answers you've saved before, including near-identical questions (marked for review);
+- your profile summary in "about you" or "additional information" boxes (marked for review);
+- date pickers and resume uploads.
+
+Labels like "Name", "Phone", "Country" and "State" resolve from the field's own label, `name`, `id` and placeholder. Fixing or filling a field yourself teaches it that mapping (`tgFieldUser`).
+
+The card says when AI is off. Optional fields it couldn't fill show up as "skipped" instead of disappearing.
+
+## Job page helpers
+
+On a posting, the card shows chips read from the page (`lib/signals.js`):
+- **Salary.** From the page's structured `JobPosting` data, or a currency range in the text.
+- **Remote, hybrid or on-site.**
+- **Visa sponsorship.** Whether it's offered, or explicitly not.
+- **A "warning signs" chip** for:
+  - a listing that's old or expired;
+  - a personal email contact;
+  - requests to move to WhatsApp or Telegram;
+  - mentions of paying for equipment or fees;
+  - no company named.
+
+If you've already saved or applied to the same job, possibly on another site (matched by company and title), the card says so and when.
+
+## Tracking
+
+Each saved job has a status: Saved, Applied, Interviewing, Offer or Rejected, with a dated history.
+- **After autofill**, the card offers **Mark as applied**.
+- **Reminders:** applied jobs get Chrome notifications after 7 and 14 days (`chrome.alarms`) to follow up.
+- **"No reply in 3+ weeks":** applied jobs with no update in 3 weeks are flagged.
+- **Applications summary:** the top of **Applications** shows applications in the last 7 days, reply rate, average days to a reply, follow-ups due, and replies by site.
+
+## Data & Privacy
+
+Settings → **Data & Privacy**:
+- shows what's stored and how much space it uses;
+- **exports** everything (profile, answers, saved jobs, resumes, settings) to one JSON file, optionally encrypted with a password (PBKDF2 + AES-256-GCM);
+- **imports** it back;
+- **erases everything**, including downloaded models.
+
+Nothing is sent to any server. The only downloads are models you choose to get.
+
 ## Installation
 
 1. Clone or download this repo.
@@ -55,6 +136,12 @@ Note: browsers don't allow extensions to silently write to an arbitrary OS path 
 - `background.js` — service worker that writes the file (via a saved directory handle) or, if no folder is set / permission needs re-confirming, opens the settings page.
 - `options.html` / `options.js` — settings app (profile, answers, resume, saved answers, AI, jobs folder, debug).
 - `idb.js` — small IndexedDB helper for persisting the chosen folder handle across browser sessions.
+- `tailor.js` — resume tailoring with the selected AI model.
+- `offscreen.html` / `offscreen.js` — hosts a downloaded WebLLM model.
+- `lib/models.js` — downloadable model list and which model is active.
+- `lib/signals.js` — salary, workplace, sponsorship and warning signs from a posting.
+- `lib/jobpage.js` — reads title, company, years and must/nice requirements from a job page.
+- `lib/docx.js` — minimal DOCX writer (stored zip, no dependencies).
 - `popup.css` — field highlight outlines injected into job pages.
 - `ui/` — shared tokens, controls, card panel and settings styles (editorial line-art: white surfaces, hairlines, pill buttons, yellow accent), icons, and bundled fonts (`ui/fonts`: Unbounded and IBM Plex Sans, both OFL).
 

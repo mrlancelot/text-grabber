@@ -33,8 +33,9 @@ const AUTOCOMPLETE = {
 
 export function exactKey(desc) {
   if (desc.kind !== "text") return null;
-  const token = String(desc.autocomplete || "").toLowerCase().split(/\s+/).pop();
-  if (AUTOCOMPLETE[token]) return AUTOCOMPLETE[token];
+  const tokens = [String(desc.autocomplete || "").toLowerCase().split(/\s+/).pop(), normalize(desc.label), String(desc.name || "").toLowerCase()];
+  const hit = tokens.find((t) => AUTOCOMPLETE[t]);
+  if (hit) return AUTOCOMPLETE[hit];
   if (desc.inputType === "email") return "email";
   if (desc.inputType === "tel") return "phone";
   return null;
@@ -83,17 +84,22 @@ export function matchText(value, options) {
     i = norm.findIndex((o) => o.includes(v));
     if (i >= 0) return i;
   }
-  if (/^\d+$/.test(v)) {
-    const n = +v;
-    i = norm.findIndex((o) => {
-      const r = /(\d+)\s*(?:-|to)\s*(\d+)/.exec(o);
-      if (r) return n >= +r[1] && n <= +r[2];
-      const plus = /(\d+)\s*\+|(\d+) or more|more than (\d+)/.exec(o);
-      if (plus) return n >= +(plus[1] || plus[2] || plus[3]);
+  const n = amount(String(value));
+  if (n != null) {
+    i = options.findIndex((o) => {
+      const nums = String(o).match(/\d[\d,]*(?:\.\d+)?\s*k?/gi)?.map(amount) || [];
+      if (nums.length >= 2 && /\d\s*k?\s*(?:-|–|to)\s*\$?\s*\d/i.test(o)) return n >= nums[0] && n <= nums[1];
+      if (nums.length && /\+|or more|more than|above|over/i.test(o)) return n >= nums[0];
+      if (nums.length && /less than|under|below|up to/i.test(o)) return n < nums[0];
       return false;
     });
   }
   return i;
+}
+
+function amount(text) {
+  const m = /^\s*\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(k)?\s*(?:years?|yrs?)?\s*$/i.exec(text);
+  return m ? parseFloat(m[1].replace(/,/g, "")) * (m[2] ? 1000 : 1) : null;
 }
 export function matchOption(key, value, options) {
   const real = options.map((o) => normalize(o)).filter((o) => !/^(select|choose|please select|--)/.test(o));
@@ -121,12 +127,11 @@ export function rankLearned(question, learned, n = 20) {
       const t = new Set(questionTokens(l.questionText));
       let inter = 0;
       for (const w of q) if (t.has(w)) inter++;
-      return { entry: l, score: inter / (q.size + t.size - inter || 1) };
+      return { ...l, score: inter / (q.size + t.size - inter || 1) };
     })
     .filter((x) => x.score > 0.15)
     .sort((a, b) => b.score - a.score)
-    .slice(0, n)
-    .map((x) => x.entry);
+    .slice(0, n);
 }
 
 const DESC_TOKENS = Object.fromEntries(Object.entries(FIELD_KEYS).map(([k, d]) => [k, new Set(questionTokens(d))]));
@@ -156,7 +161,17 @@ export function descriptionScore(key, label) {
 export function bestKey(label, keys) {
   const ranked = keys.map((k) => [k, descriptionScore(k, label)]).sort((a, b) => b[1] - a[1]);
   const [top, second] = ranked;
-  return top && top[1] >= 1 && top[1] >= 1.5 * (second?.[1] || 0) ? top[0] : null;
+  if (!top || top[1] < 0.75) return null;
+  if (top[1] >= 1 && top[1] >= 1.5 * (second?.[1] || 0)) return top[0];
+  const coverage = ranked.filter(([, s]) => s >= 0.6 * top[1]).map(([k]) => [k, coverOf(k, label)]).sort((a, b) => b[1] - a[1]);
+  return coverage[0][1] > (coverage[1]?.[1] ?? 0) ? coverage[0][0] : null;
+}
+
+function coverOf(key, label) {
+  const words = questionTokens(label);
+  let matched = 0;
+  for (const t of DESC_TOKENS[key]) if (words.some((w) => sameWord(w, t))) matched++;
+  return matched / DESC_TOKENS[key].size;
 }
 
 export function isYesNo(options) {

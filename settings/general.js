@@ -1,12 +1,7 @@
 import { getFolderHandle, setFolderHandle } from "../idb.js";
 import { nextFilename } from "../counter.js";
-import { el, paneHeader, group, row, toggle, button, send } from "./ui.js";
-
-const NANO_STATUS = {
-  ok: ["var(--green)", "Ready"],
-  downloading: ["var(--yellow)", "Downloading"],
-  unavailable: ["var(--red)", "Unavailable"],
-};
+import { el, paneHeader, group, row, toggle, button } from "./ui.js";
+import { modelsGroup } from "./models.js";
 
 export const ai = {
   id: "ai",
@@ -16,19 +11,26 @@ export const ai = {
   keywords: "gemini nano ai model privacy field memory cache clear on-device",
 
   async render(root) {
-    const header = paneHeader("AI & Privacy", "Matching and writing run on Gemini Nano, inside Chrome on this device.");
-    const status = el("span", { className: "status-value callout secondary", textContent: "Checking…" });
+    const header = paneHeader("AI & Privacy", "AI runs on this device. Autofill works without it too.");
     const memory = el("span", { className: "callout secondary" });
 
     async function drawMemory() {
-      const { tgFieldCache } = await chrome.storage.local.get("tgFieldCache");
-      const n = Object.keys(tgFieldCache || {}).length;
+      const { tgFieldCache, tgFieldUser } = await chrome.storage.local.get(["tgFieldCache", "tgFieldUser"]);
+      const n = Object.keys({ ...tgFieldCache, ...tgFieldUser }).length;
       memory.textContent = `${n} remembered ${n === 1 ? "match" : "matches"}`;
     }
 
     root.replaceChildren(
       header.node,
-      group("On-device model", [row("Gemini Nano", status)], "Your profile, answers and resume never leave this device. Nothing is sent to a server."),
+      modelsGroup(),
+      group(
+        "Without AI",
+        [
+          row("Still works", el("span", { className: "callout secondary", textContent: "Profile fields, saved answers, corrections you make, your summary in open text boxes, resume upload" })),
+          row("Needs AI", el("span", { className: "callout secondary", textContent: "Unusual questions, unclear options, drafted answers, tailored resume summary" })),
+        ],
+        "Your profile, answers and resume never leave this device. Nothing is sent to a server."
+      ),
       group(
         "Field memory",
         [
@@ -39,21 +41,17 @@ export const ai = {
               { className: "inline" },
               memory,
               button("Clear", "", async () => {
-                await chrome.storage.local.remove("tgFieldCache");
+                await chrome.storage.local.remove(["tgFieldCache", "tgFieldUser"]);
                 await drawMemory();
                 header.saved();
               })
             )
           ),
         ],
-        "When the AI matches a form question to your data, the match is remembered so the next form fills instantly."
+        "When the AI matches a form question to your data, or you correct a field yourself, the match is remembered so the next form fills instantly."
       )
     );
     drawMemory();
-
-    const result = (await send({ type: "TG_NANO_STATUS" })) || { status: "unavailable", reason: "No response from the extension." };
-    const [color, label] = NANO_STATUS[result.status] || NANO_STATUS.unavailable;
-    status.replaceChildren(el("span", { className: "dot", style: `background: ${color}` }), result.reason && result.status !== "ok" ? `${label} — ${result.reason}` : label);
   },
 };
 

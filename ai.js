@@ -1,3 +1,6 @@
+import { log } from "./lib/log.js";
+import { activeModel } from "./lib/models.js";
+
 // Same options for availability() and create() so they agree (and Chrome doesn't warn).
 const NANO_OPTIONS = {
   expectedInputs: [{ type: "text", languages: ["en"] }],
@@ -5,6 +8,12 @@ const NANO_OPTIONS = {
 };
 
 export async function checkAvailability() {
+  const model = await activeModel();
+  if (model !== "nano") return { status: "ok", model };
+  return nanoAvailability();
+}
+
+export async function nanoAvailability() {
   if (typeof LanguageModel === "undefined") {
     return { status: "unavailable", reason: "Gemini Nano (Prompt API) isn't available in this browser." };
   }
@@ -13,18 +22,17 @@ export async function checkAvailability() {
     if (availability === "unavailable") {
       return { status: "unavailable", reason: "This device doesn't meet Gemini Nano's requirements." };
     }
-    if (availability === "downloadable" || availability === "downloading") {
-      return { status: "downloading", availability };
-    }
+    if (availability === "downloadable" || availability === "downloading") return { status: availability };
     return { status: "ok" };
   } catch (err) {
     return { status: "unavailable", reason: String(err && err.message ? err.message : err) };
   }
 }
 
-async function createSession(systemPrompt, onProgress) {
+async function createSession(systemPrompt, sampling, onProgress) {
   return LanguageModel.create({
     ...NANO_OPTIONS,
+    ...sampling,
     initialPrompts: systemPrompt ? [{ role: "system", content: systemPrompt }] : undefined,
     monitor(m) {
       m.addEventListener("downloadprogress", (e) => {
@@ -34,41 +42,9 @@ async function createSession(systemPrompt, onProgress) {
   });
 }
 
-export async function runStructured(systemPrompt, userPrompt, schema) {
-  const availability = await checkAvailability();
-  if (availability.status !== "ok" && availability.status !== "downloading") {
-    return { ok: false, ...availability };
-  }
-
-  let session;
-  try {
-    session = await createSession(systemPrompt);
-    const raw = await session.prompt(userPrompt, { responseConstraint: schema });
-    const data = JSON.parse(raw);
-    return { ok: true, data };
-  } catch (err) {
-    return { ok: false, status: "error", reason: String(err && err.message ? err.message : err) };
-  } finally {
-    if (session) session.destroy();
-  }
-}
-
-export async function runText(systemPrompt, userPrompt) {
-  const availability = await checkAvailability();
-  if (availability.status !== "ok" && availability.status !== "downloading") {
-    return { ok: false, ...availability };
-  }
-
-  let session;
-  try {
-    session = await createSession(systemPrompt);
-    const text = await session.prompt(userPrompt);
-    return { ok: true, data: text };
-  } catch (err) {
-    return { ok: false, status: "error", reason: String(err && err.message ? err.message : err) };
-  } finally {
-    if (session) session.destroy();
-  }
+export async function downloadNano(onProgress) {
+  const session = await createSession(undefined, undefined, onProgress);
+  session.destroy();
 }
 
 // One warm base session per task, cloned per call: clone() skips re-reading the
@@ -76,31 +52,60 @@ export async function runText(systemPrompt, userPrompt) {
 // Bases die with the service worker and are recreated lazily.
 const bases = new Map();
 
-function getBase(systemPrompt) {
-  if (!bases.has(systemPrompt)) {
+function getBase(systemPrompt, sampling) {
+  const key = JSON.stringify([systemPrompt, sampling]);
+  if (!bases.has(key)) {
     bases.set(
-      systemPrompt,
-      createSession(systemPrompt).catch((err) => {
-        bases.delete(systemPrompt); // don't cache a failed create
+      key,
+      createSession(systemPrompt, sampling).catch((err) => {
+        bases.delete(key); // don't cache a failed create
         throw err;
       })
     );
   }
-  return bases.get(systemPrompt);
+  return bases.get(key);
 }
 
-async function cloneBase(systemPrompt) {
+async function cloneBase(systemPrompt, sampling) {
   try {
-    return await (await getBase(systemPrompt)).clone();
+    return await (await getBase(systemPrompt, sampling)).clone();
   } catch {
-    bases.delete(systemPrompt); // base was destroyed/evicted — rebuild once
-    return (await getBase(systemPrompt)).clone();
+    bases.delete(JSON.stringify([systemPrompt, sampling])); // base was destroyed/evicted — rebuild once
+    return (await getBase(systemPrompt, sampling)).clone();
   }
 }
 
-export function warmUp(systemPrompts) {
+export async function warmUp(systemPrompts) {
+  const model = await activeModel();
+  if (model !== "nano") return offscreen({ model, warm: true }).catch(() => {});
   if (typeof LanguageModel === "undefined") return;
   for (const p of systemPrompts) getBase(p).catch(() => {});
+}
+
+let offscreenReady = null;
+
+async function offscreen(message) {
+  offscreenReady ??= chrome.offscreen
+    .hasDocument()
+    .then((open) => open || chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["WORKERS"], justification: "Runs the on-device AI model you downloaded." }))
+    .catch((err) => {
+      offscreenReady = null;
+      throw err;
+    });
+  await offscreenReady;
+  const reply = await chrome.runtime.sendMessage({ target: "offscreen", ...message });
+  if (reply?.error) throw new Error(reply.error);
+  return reply;
+}
+
+async function askLocal(model, system, text, schema, sampling) {
+  if (system.length + text.length > 12000) return "too-long";
+  try {
+    const reply = await offscreen({ model, system, text, schema, temperature: sampling?.temperature });
+    return schema ? JSON.parse(reply.text) : reply.text.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 // Fraction of the context window left after `text` (1 = plenty). Older Chrome
@@ -120,13 +125,13 @@ async function fitsContext(session, text, schema) {
 
 // Returns the parsed answer, null if Nano couldn't answer, or "too-long" if the
 // input doesn't fit the context window (the caller should split it). Never throws.
-export async function askStructured(systemPrompt, userText, schema) {
+export async function askStructured(systemPrompt, userText, schema, { sampling, omitSchema } = {}) {
   if (typeof LanguageModel === "undefined") return null;
   let session;
   try {
-    session = await cloneBase(systemPrompt);
+    session = await cloneBase(systemPrompt, sampling);
     if (!(await fitsContext(session, userText, schema))) return "too-long";
-    const reply = await session.prompt(userText, { responseConstraint: schema });
+    const reply = await session.prompt(userText, { responseConstraint: schema, omitResponseConstraintInput: !!omitSchema });
     return JSON.parse(reply);
   } catch (err) {
     return err && err.name === "QuotaExceededError" ? "too-long" : null;
@@ -148,4 +153,30 @@ export async function askText(systemPrompt, userText) {
   } finally {
     session?.destroy?.();
   }
+}
+
+function choiceSizes(schema) {
+  if (!schema) return undefined;
+  if (schema.enum) return schema.enum.length;
+  return Object.fromEntries(Object.entries(schema.properties || {}).map(([k, v]) => [k, v.enum?.length]));
+}
+
+const TIMEOUT_MS = 25000;
+
+export async function ask(task, system, text, schema, options) {
+  const t0 = performance.now();
+  const model = await activeModel();
+  const call =
+    model !== "nano"
+      ? askLocal(model, system, text, schema, options?.sampling)
+      : schema
+        ? askStructured(system, text, schema, options)
+        : askText(system, text);
+  let timer;
+  const timeout = new Promise((resolve) => (timer = setTimeout(() => resolve("timeout"), TIMEOUT_MS)));
+  const result = await Promise.race([call, timeout]);
+  clearTimeout(timer);
+  const output = result === "timeout" ? null : result;
+  log(`${model === "nano" ? "nano" : "local"}:${task}`, { ms: Math.round(performance.now() - t0), input: text, choices: choiceSizes(schema), output, timeout: result === "timeout" });
+  return output;
 }

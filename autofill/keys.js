@@ -33,6 +33,7 @@ export const FIELD_KEYS = {
   salary: "desired salary / compensation",
   heardAbout: "how they heard about the job",
   pronouns: "pronouns",
+  summary: "professional summary / about yourself / bio / additional information",
   "eeo.gender": "gender (EEO self-identification)",
   "eeo.race": "race / ethnicity (EEO)",
   "eeo.hispanic": "Hispanic or Latino (EEO)",
@@ -120,13 +121,15 @@ export function buildValues(profile, answers) {
   const derived = {
     firstName: first,
     lastName: last,
+    preferredName: first,
     fullName: c.name || "",
     email: c.email || "",
     phone: c.phone || "",
+    phoneCountryCode: (/^\s*(\+\d{1,3})/.exec(c.phone || "") || [""])[0].trim(),
     location: c.location || "",
     city: locParts[0] || "",
-    state: locParts.length > 2 ? locParts[1] : "",
-    country: locParts.length > 1 ? locParts[locParts.length - 1] : "",
+    state: locParts.length > 1 ? locParts[1] : "",
+    country: locParts.length > 2 ? locParts[locParts.length - 1] : "",
     linkedin: c.linkedin || "",
     github: c.github || "",
     website: c.portfolio || "",
@@ -137,6 +140,7 @@ export function buildValues(profile, answers) {
     degree: school.degree || "",
     fieldOfStudy: school.field || "",
     graduationYear: (/\d{4}/.exec(school.endDate || "") || [""])[0],
+    summary: p.summary || "",
   };
 
   const values = { ...derived };
