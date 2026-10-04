@@ -48,6 +48,15 @@ function holdsOtherField(node, els) {
   );
 }
 
+function checkboxBlock(el) {
+  for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+    if (node.querySelectorAll("input[type=checkbox]").length < 2) continue;
+    const others = node.querySelectorAll("input:not([type=checkbox]):not([type=hidden]), select, textarea, button[aria-pressed]");
+    return [...others].some(isVisible) ? null : node;
+  }
+  return null;
+}
+
 function wrapperLabel(node, els) {
   const optionLabels = els.flatMap((e) => [...(e.labels || [])]);
   const isOwn = (n) => els.some((e) => n.contains(e)) || optionLabels.some((l) => l.contains(n));
@@ -221,6 +230,16 @@ export function detectFields(root = document) {
       name: el.getAttribute("name") || "",
       id: el.id || "",
     });
+  }
+
+  for (const [key, group] of [...groups]) {
+    if (group.type !== "checkbox" || group.els.length !== 1) continue;
+    const block = checkboxBlock(group.els[0]);
+    if (!block) continue;
+    groups.delete(key);
+    const merged = `checkbox:block:${uidOf(block)}`;
+    if (!groups.has(merged)) groups.set(merged, { type: "checkbox", els: [] });
+    groups.get(merged).els.push(group.els[0]);
   }
 
   for (const { type, els } of groups.values()) {
