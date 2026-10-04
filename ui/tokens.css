@@ -12,8 +12,8 @@
   --line: 1px solid var(--label);
   --dash: 1px dashed var(--label);
   --radius: 16px;
-  --font: "TG Plex", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "TG Unbounded", "Unbounded", system-ui, -apple-system, sans-serif;
+  --font: "Pave Plex", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Pave Unbounded", "Unbounded", system-ui, -apple-system, sans-serif;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur: 180ms;
   color-scheme: light;

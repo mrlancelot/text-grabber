@@ -18,6 +18,7 @@
   transition: background var(--dur) var(--ease);
 }
 .pill:hover { background: var(--yellow); }
+.brand-mark { flex: none; width: 24px; height: 24px; box-sizing: border-box; padding: 2px; border-radius: 6px; background: var(--yellow); }
 .pill-badge { min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border: var(--line); border-radius: 10px; background: var(--red); font: 500 11px/18px var(--font); text-align: center; }
 
 .card { width: 340px; box-sizing: border-box; background: var(--cell); border: var(--line); border-radius: 20px; overflow: hidden; animation: rise var(--dur) var(--ease); }

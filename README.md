@@ -1,6 +1,19 @@
-# Text Grabber
+# Pave
 
-A Chrome extension that pops up on job posting pages (like Rakuten's cashback popup) and, with one click, saves the full page text to a local folder of your choice.
+A Chrome extension that helps you save jobs, autofill applications, tailor resumes, and track your job search with optional on-device AI.
+
+**Your next step, made easier.**
+
+## Branding
+
+The app icon is a road design by [Slidicon](https://www.flaticon.com/authors/slidicon)
+from [Flaticon](https://www.flaticon.com/free-icon/road_3016235), used with
+attribution. See [icon sizes and credits](icons/README.md).
+
+Pave keeps the existing database and settings identifiers so renaming the app
+preserves your data. New exports use `pave-backup`; backups exported before the
+rename still import. Reload this extension from `chrome://extensions` to see the
+new name and icon, then refresh any open job pages.
 
 ## What it does
 
@@ -33,7 +46,7 @@ Click **Autofill** in the popup on an application form, or press **Alt+Shift+F**
 - Coral ring: required and still empty.
 - Dashed blue ring: being filled right now.
 
-The form is never submitted. To see why a field was or wasn't filled, turn on **Debug logs** in settings: each step prints to the page console with a `[TG]` prefix, and each Gemini Nano call prints to the service worker console. Set up your profile (LinkedIn "Save to PDF" or Markdown), resume file and personal answers on the settings page. Answers you type into custom questions are saved and reused.
+The form is never submitted. To see why a field was or wasn't filled, turn on **Debug logs** in settings: each step prints to the page console with a `[Pave]` prefix, and each Gemini Nano call prints to the service worker console. Set up your profile (LinkedIn "Save to PDF" or Markdown), resume file and personal answers on the settings page. Answers you type into custom questions are saved and reused.
 
 ## Tailored resumes (experimental)
 

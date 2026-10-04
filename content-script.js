@@ -1,6 +1,7 @@
 (function () {
-  if (window.__tgTextGrabber) return;
-  window.__tgTextGrabber = true;
+  // Recognize the previous marker to avoid duplicate panels on already-open tabs.
+  if (window.__paveInjected || window.__tgTextGrabber) return;
+  window.__paveInjected = true;
 
   const url = (path) => chrome.runtime.getURL(path);
   let autofillModule = null;
@@ -34,9 +35,9 @@
   async function createHud() {
     const { icon } = await import(url("ui/icons.js"));
     for (const [family, file, weight] of [
-      ["TG Unbounded", "Unbounded-SemiBold", "600"],
-      ["TG Plex", "IBMPlexSans-Regular", "400"],
-      ["TG Plex", "IBMPlexSans-Medium", "500"],
+      ["Pave Unbounded", "Unbounded-SemiBold", "600"],
+      ["Pave Plex", "IBMPlexSans-Regular", "400"],
+      ["Pave Plex", "IBMPlexSans-Medium", "500"],
     ]) document.fonts.add(new FontFace(family, `url(${url(`ui/fonts/${file}.woff2`)})`, { weight }));
     const host = document.createElement("div");
     host.id = "tg-host";
@@ -47,10 +48,10 @@
       <link rel="stylesheet" href="${url("ui/controls.css")}">
       <link rel="stylesheet" href="${url("ui/panel.css")}">
       <div class="hud" data-state="pill">
-        <button class="pill"><span class="pill-label"></span><span class="pill-badge" hidden></span></button>
-        <div class="card" role="dialog" aria-label="Text Grabber">
+        <button class="pill"><img class="brand-mark" src="${url("icons/icon32.png")}" width="24" height="24" alt=""><span class="pill-label"></span><span class="pill-badge" hidden></span></button>
+        <div class="card" role="dialog" aria-label="Pave">
           <header>
-            <div class="titles"><span class="title3 title"></span><span class="caption secondary subtitle"></span></div>
+            <div class="titles"><img class="brand-mark" src="${url("icons/icon32.png")}" width="24" height="24" alt=""><span class="title3 title">Pave</span><span class="caption secondary subtitle"></span></div>
             <button class="close" aria-label="Close"></button>
           </header>
           <div class="body">
@@ -115,7 +116,6 @@
     function showMode(form) {
       isForm = form;
       $(".pill-label").textContent = form ? "Autofill" : "Save Job";
-      $(".title").textContent = form ? "Autofill" : "Save this job";
       autofillBtn.hidden = !form;
       setStatus(form ? "Fill this application from your profile." : "Save the posting to your jobs folder.", false);
       if (form) loadAutofill().then((m) => m.warmUp()).catch(() => {});
@@ -162,7 +162,7 @@
     function stale() {
       if (alive()) return false;
       expand();
-      setStatus("Text Grabber was updated. Reload this page to use it.", false);
+      setStatus("Pave was updated. Reload this page to use it.", false);
       return true;
     }
 

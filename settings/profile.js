@@ -275,7 +275,7 @@ export default {
 
     function draw() {
       const scroll = root.parentElement.scrollTop;
-      root.replaceChildren(
+      root.replaceChildren(...[
         header.node,
         imported && el("div", { className: "banner" }, icon("check"), `Imported ${profile.experience?.length || 0} roles and ${profile.education?.length || 0} schools from ${imported}. Check everything below, then Save.`),
         card(),
@@ -285,7 +285,7 @@ export default {
         listGroup("education", "Education", "school", "Add School"),
         skillsGroup(),
         imported && importBar()
-      );
+      ].filter((child) => child != null && child !== false));
       root.parentElement.scrollTop = scroll;
     }
 

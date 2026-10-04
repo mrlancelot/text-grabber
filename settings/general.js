@@ -80,7 +80,7 @@ export const jobs = {
     async function draw() {
       const handle = await getFolderHandle();
       const { tgPending } = await chrome.storage.local.get("tgPending");
-      root.replaceChildren(
+      root.replaceChildren(...[
         header.node,
         tgPending && el("div", { className: "banner" }, "A job posting is waiting to be saved. Choose a folder to finish."),
         group("Folder", [
@@ -101,7 +101,7 @@ export const jobs = {
           ),
         ]),
         note
-      );
+      ].filter((child) => child != null && child !== false));
     }
 
     await draw();

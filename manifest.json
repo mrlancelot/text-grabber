@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Text Grabber",
-  "version": "1.0.0",
-  "description": "Save job postings and autofill applications from your profile, with on-device Gemini Nano.",
+  "name": "Pave",
+  "version": "1.0.1",
+  "description": "Save jobs, autofill applications, tailor resumes, and track your job search with optional on-device AI.",
   "options_page": "options.html",
   "background": {
     "service_worker": "background.js",
@@ -18,9 +18,10 @@
     "unlimitedStorage"
   ],
   "action": {
-    "default_title": "Text Grabber \u2014 click to open settings (Alt+Shift+F autofills)",
+    "default_title": "Pave \u2014 open your job workspace (Alt+Shift+F autofills)",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
@@ -83,6 +84,7 @@
         "lib/*.js",
         "ui/*.css",
         "ui/*.js",
+        "icons/icon32.png",
         "ui/fonts/*"
       ],
       "matches": [
@@ -92,6 +94,7 @@
   ],
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },

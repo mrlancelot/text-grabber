@@ -11,7 +11,6 @@ import {
   setFile,
   getApplication,
   listApplications,
-  deleteApplication,
 } from "./idb.js";
 import { nextFilename } from "./counter.js";
 import { checkAvailability, ask, warmUp } from "./ai.js";
@@ -22,7 +21,6 @@ import { normalize } from "./autofill/match.js";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.remove(["tgCorpus", "tgVerdicts", "tgAutoAnalyze"]);
-  for (const app of await listApplications()) if (app.status !== "saved") await deleteApplication(app.id);
 });
 
 chrome.action.onClicked.addListener(() => {

@@ -1,7 +1,9 @@
 import { BACKUP_STORES, readStore, replaceStores, clearAllStores } from "../idb.js";
 import { el, paneHeader, group, row, button, pickFile } from "./ui.js";
 
-const FORMAT = "text-grabber-backup";
+const FORMAT = "pave-backup";
+// Preserve imports made before the Pave rename.
+const LEGACY_FORMAT = "text-grabber-backup";
 
 const toB64 = (bytes) => btoa(Array.from(new Uint8Array(bytes), (b) => String.fromCharCode(b)).join(""));
 const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
@@ -42,7 +44,7 @@ async function seal(data, password) {
 }
 
 async function open(file) {
-  if (file.format !== FORMAT) throw new Error("This isn't a Text Grabber backup.");
+  if (file.format !== FORMAT && file.format !== LEGACY_FORMAT) throw new Error("This isn't a Pave backup.");
   if (file.data) return file.data;
   const password = prompt("This backup is password-protected. Enter its password:");
   if (!password) throw new Error("No password entered.");
@@ -77,7 +79,7 @@ export default {
 
     const exportButton = button("Export…", "prominent", async () => {
       const file = await seal(await collect(), password.value);
-      const a = el("a", { href: URL.createObjectURL(new Blob([JSON.stringify(file)], { type: "application/json" })), download: `text-grabber-backup-${new Date().toISOString().slice(0, 10)}.json` });
+      const a = el("a", { href: URL.createObjectURL(new Blob([JSON.stringify(file)], { type: "application/json" })), download: `pave-backup-${new Date().toISOString().slice(0, 10)}.json` });
       a.click();
       URL.revokeObjectURL(a.href);
       note.textContent = password.value ? "Backup saved and encrypted with your password." : "Backup saved.";
@@ -85,7 +87,7 @@ export default {
 
     const importButton = button("Import…", "", async () => {
       try {
-        const file = await pickFile("Text Grabber backup", { "application/json": [".json"] });
+        const file = await pickFile("Pave backup", { "application/json": [".json"] });
         if (!file || !confirm("Replace your current profile, answers and applications with this backup?")) return;
         await restore(await open(JSON.parse(await file.text())));
         header.saved();

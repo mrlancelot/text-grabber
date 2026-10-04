@@ -1,6 +1,6 @@
-@font-face { font-family: "TG Unbounded"; font-weight: 600; src: url("fonts/Unbounded-SemiBold.woff2") format("woff2"); }
-@font-face { font-family: "TG Plex"; font-weight: 400; src: url("fonts/IBMPlexSans-Regular.woff2") format("woff2"); }
-@font-face { font-family: "TG Plex"; font-weight: 500; src: url("fonts/IBMPlexSans-Medium.woff2") format("woff2"); }
+@font-face { font-family: "Pave Unbounded"; font-weight: 600; src: url("fonts/Unbounded-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "Pave Plex"; font-weight: 400; src: url("fonts/IBMPlexSans-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Pave Plex"; font-weight: 500; src: url("fonts/IBMPlexSans-Medium.woff2") format("woff2"); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; color: var(--label); font: 400 13px/17px var(--font); -webkit-font-smoothing: antialiased; }
@@ -11,6 +11,11 @@ h1, p { margin: 0; }
   background: var(--cell); border: var(--line); border-radius: 24px; overflow: hidden; }
 
 .sidebar { border-right: var(--line); padding: 16px 12px; overflow-y: auto; }
+.brand { display: flex; align-items: center; gap: 10px; margin: 0 4px 20px; }
+.brand img { flex: none; background: var(--yellow); border: var(--line); border-radius: 12px; padding: 4px; }
+.brand p { margin-top: 4px; }
+.icon-credit { margin: 24px 6px 0; }
+.icon-credit a { color: inherit; text-underline-offset: 2px; }
 .search { position: relative; margin-bottom: 16px; }
 .search svg { position: absolute; left: 11px; top: 9px; width: 13px; height: 13px; }
 .search .field { width: 100%; padding-left: 30px; border-radius: 999px; }
