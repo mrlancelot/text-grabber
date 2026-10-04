@@ -8,6 +8,7 @@ import {
 export function normalize(text) {
   return String(text || "")
     .toLowerCase()
+    .replace(/\p{Cf}/gu, "")
     .replace(/[‘’]/g, "'")
     .replace(/[*:;,.()[\]{}"!?]/g, " ")
     .replace(/\s+/g, " ")

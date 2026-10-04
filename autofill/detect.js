@@ -17,6 +17,7 @@ export function isVisible(el) {
 
 function cleanText(text) {
   return String(text || "")
+    .replace(/\p{Cf}/gu, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 300);

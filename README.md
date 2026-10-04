@@ -35,7 +35,11 @@ new name and icon, then refresh any open job pages.
 - BambooHR (`*.bamboohr.com/careers/*`)
 - Jobvite (`jobs.jobvite.com`)
 
-More can be added by extending the `matches` list in `manifest.json`.
+Any other site, like a company careers page that embeds Greenhouse or Ashby, can be added from the toolbar: click the Pave icon, then **Enable Pave on this site**. Chrome asks for access to that one site only. Manage added sites in Settings → Sites.
+
+The toolbar icon shows a green dot when the page has a form Pave can fill, the number of fields that need you after a fill, and a **+** when an embedded application form is waiting for you to enable the site.
+
+When a form you autofilled is submitted, the job is marked Applied automatically (with an Undo on the card). **Undo fill** clears everything Pave filled.
 
 ## Autofill
 
@@ -139,7 +143,7 @@ Nothing is sent to any server. The only downloads are models you choose to get.
 
 ## Choosing where files are saved
 
-The first time you click **Save**, Chrome's folder picker opens (via the [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)) so you can choose a destination folder. That choice is remembered for future saves. You can change it anytime from the extension's settings page (click the toolbar icon, or right-click it → **Options**).
+The first time you click **Save**, Chrome's folder picker opens (via the [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)) so you can choose a destination folder. That choice is remembered for future saves. You can change it anytime from the extension's settings page (click the toolbar icon → **Open workspace**, or right-click it → **Options**).
 
 Note: browsers don't allow extensions to silently write to an arbitrary OS path for security reasons, so a folder must be explicitly granted via this picker — there's no way around that one-time step.
 

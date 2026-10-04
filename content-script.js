@@ -4,13 +4,25 @@
   window.__paveInjected = true;
 
   const url = (path) => chrome.runtime.getURL(path);
+  const isTop = window.top === window;
   let autofillModule = null;
-  const loadAutofill = () => (autofillModule ??= import(url("autofill/main.js")));
+  const loadAutofill = () => (autofillModule ??= import(url("autofill/main.js")).then((m) => (m.onSubmitted(reportSubmitted), m)));
 
   function countFormFields() {
     return document.querySelectorAll(
       'input:not([type=hidden]):not([type=submit]):not([type=button]), textarea, select, button[aria-haspopup="listbox"]'
     ).length;
+  }
+  window.__paveFormFields = countFormFields;
+
+  function whenForm(cb) {
+    if (countFormFields() >= 3) return cb();
+    const watcher = new MutationObserver(() => {
+      if (countFormFields() < 3) return;
+      watcher.disconnect();
+      cb();
+    });
+    watcher.observe(document.body || document.documentElement, { childList: true, subtree: true });
   }
 
   function extractPageText() {
@@ -26,6 +38,11 @@
       chrome.runtime.sendMessage(message, (response) => resolve(chrome.runtime.lastError ? null : response));
     });
   }
+
+  const toTop = (message) => send({ type: "TG_TO_TOP", message });
+  const frameCmd = (frameId, cmd) => send({ type: "TG_TO_FRAME", frameId, message: { type: "TG_FRAME_CMD", ...cmd } });
+  const badge = (state, needs) => send({ type: "TG_BADGE", state, needs });
+  const reportSubmitted = () => (hudPromise ? getHud().then((hud) => hud.markApplied()) : toTop({ type: "TG_SUBMITTED" }));
 
   const STATUS_LABEL = { filled: "Filled", review: "Review", needs: "Needs you" };
 
@@ -65,6 +82,7 @@
           <div class="attention" hidden><div class="caption secondary section-label">Needs attention</div><div class="group list"></div></div>
           <div class="banner" hidden></div>
           <button class="btn prominent large wide autofill">Autofill</button>
+          <button class="btn plain wide undo" hidden>Undo fill</button>
           <div class="actions">
             <button class="btn plain save">Save Job</button>
             <button class="btn plain tailor"><span>Tailor Resume</span></button>
@@ -83,6 +101,9 @@
     const hud = $(".hud");
     const autofillBtn = $(".autofill");
     const saveBtn = $(".save");
+    const undoBtn = $(".undo");
+    const frames = new Set();
+    const sources = new Map();
     const statusText = $(".status .text");
     const spinner = icon("spinner", "spinner");
     let isForm = false;
@@ -118,10 +139,30 @@
       $(".pill-label").textContent = form ? "Autofill" : "Save Job";
       autofillBtn.hidden = !form;
       setStatus(form ? "Fill this application from your profile." : "Save the posting to your jobs folder.", false);
-      if (form) loadAutofill().then((m) => m.warmUp()).catch(() => {});
+      if (!form) return;
+      loadAutofill().then((m) => m.warmUp()).catch(() => {});
+      if (isTop) badge("ready");
     }
 
-    function showProgress({ counts, items, done, total }) {
+    function addFrame(frameId) {
+      if (frames.has(frameId)) return;
+      frames.add(frameId);
+      frameCmd(frameId, { cmd: "adopt" });
+      if (!isForm) showMode(true);
+    }
+
+    function showProgress(progress, frameId = null) {
+      sources.set(frameId, progress);
+      const counts = { filled: 0, review: 0, needs: 0 };
+      const items = [];
+      let done = 0;
+      let total = 0;
+      for (const [source, p] of sources) {
+        for (const status in counts) counts[status] += p.counts[status];
+        items.push(...p.items.map((item) => ({ ...item, frameId: source })));
+        done += p.done;
+        total += p.total;
+      }
       $(".progress").hidden = false;
       $(".bar").style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
       $(".summary").hidden = false;
@@ -149,14 +190,23 @@
           reason.textContent = item.reason;
           texts.append(label, reason);
           row.append(icon("warning", "status-icon"), texts, icon("chevron", "chevron"));
-          row.addEventListener("click", async () => !stale() && (await loadAutofill()).scrollToUid(item.uid));
+          row.addEventListener("click", async () => {
+            if (stale()) return;
+            if (item.frameId == null) (await loadAutofill()).scrollToUid(item.uid);
+            else frameCmd(item.frameId, { cmd: "jump", uid: item.uid });
+          });
           return row;
         })
       );
     }
 
     for (const status of ["filled", "review", "needs"]) {
-      $(`.stat[data-status="${status}"]`).addEventListener("click", async () => !stale() && (await loadAutofill()).scrollToNext(status));
+      $(`.stat[data-status="${status}"]`).addEventListener("click", async () => {
+        const source = [...sources].find(([, p]) => p.counts[status] > 0)?.[0];
+        if (stale() || source === undefined) return;
+        if (source === null) (await loadAutofill()).scrollToNext(status);
+        else frameCmd(source, { cmd: "next", status });
+      });
     }
 
     function stale() {
@@ -171,12 +221,21 @@
       expand();
       autofillBtn.disabled = true;
       setStatus("Getting ready", true);
+      sources.clear();
       try {
-        const counts = await (await loadAutofill()).autofill({ onProgress: showProgress, onStatus: setStatus });
-        if (counts.stale) return stale();
-        if (counts.empty) setStatus("No form fields found here.", false);
+        const results = [];
+        if (!frames.size || countFormFields() >= 3) {
+          const counts = await (await loadAutofill()).autofill({ onProgress: (p) => showProgress(p), onStatus: setStatus });
+          if (counts.stale) return stale();
+          results.push(counts);
+        }
+        for (const frameId of frames) results.push(await frameCmd(frameId, { cmd: "autofill" }));
+        if (results.every((counts) => !counts || counts.empty)) return setStatus("No form fields found here.", false);
         $(".bar").style.width = "100%";
         autofillBtn.textContent = "Fill Again";
+        undoBtn.hidden = false;
+        const needs = [...sources.values()].reduce((n, p) => n + p.counts.needs, 0);
+        badge(needs ? "needs" : "ready", needs);
         offerApplied();
       } catch (err) {
         setStatus(`Autofill failed: ${err && err.message ? err.message : err}`, false);
@@ -186,6 +245,23 @@
     }
 
     autofillBtn.addEventListener("click", runAutofill);
+
+    undoBtn.addEventListener("click", async () => {
+      if (stale()) return;
+      undoBtn.disabled = true;
+      const results = [];
+      if (sources.has(null)) results.push(await (await loadAutofill()).undo());
+      for (const frameId of frames) results.push(await frameCmd(frameId, { cmd: "undo" }));
+      const cleared = results.reduce((n, r) => n + (r?.cleared || 0), 0);
+      const kept = results.reduce((n, r) => n + (r?.kept || 0), 0);
+      sources.clear();
+      for (const sel of [".progress", ".summary", ".attention", ".pill-badge"]) $(sel).hidden = true;
+      autofillBtn.textContent = "Autofill";
+      undoBtn.hidden = true;
+      undoBtn.disabled = false;
+      setStatus(`Cleared ${cleared} field${cleared === 1 ? "" : "s"}${kept ? ` · ${kept} left as is` : ""}.`, false);
+      badge("ready");
+    });
 
     saveBtn.addEventListener("click", async () => {
       if (stale()) return;
@@ -199,16 +275,8 @@
       setStatus(response?.needsFolder ? "Choose a folder in the tab that just opened." : response?.error || "Couldn't save — try again.", false);
     });
 
-    if (countFormFields() >= 3) showMode(true);
-    else {
-      showMode(false);
-      const watcher = new MutationObserver(() => {
-        if (countFormFields() < 3) return;
-        watcher.disconnect();
-        showMode(true);
-      });
-      watcher.observe(document.body, { childList: true, subtree: true });
-    }
+    if (countFormFields() < 3) showMode(false);
+    whenForm(() => showMode(true));
 
     const tailorBtn = $(".tailor");
     const tailorLabel = tailorBtn.querySelector("span");
@@ -291,16 +359,82 @@
       box.hidden = false;
     }
 
-    if (window.top === window) jobInfo();
+    async function markApplied() {
+      const { readJob } = await import(url("lib/jobpage.js"));
+      const response = await send({ type: "TG_MARK_APPLIED", url: location.href, job: readJob() });
+      if (!response?.ok) return;
+      const box = $(".dup");
+      const undo = Object.assign(document.createElement("button"), { className: "btn plain", textContent: "Undo" });
+      undo.addEventListener("click", async () => {
+        await send({ type: "TG_SET_STATUS", id: response.id, status: "saved" });
+        box.hidden = true;
+      });
+      box.replaceChildren(document.createTextNode("Marked as applied. Reminders in 7 and 14 days."), undo);
+      box.hidden = false;
+      expand();
+    }
 
-    return { runAutofill };
+    if (isTop) {
+      jobInfo();
+      for (const frameId of (await send({ type: "TG_FIND_FORMS" })) || []) addFrame(frameId);
+    }
+
+    return {
+      runAutofill,
+      addFrame,
+      markApplied,
+      showProgress,
+      setStatus,
+      remove: () => host.remove(),
+    };
   }
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (!alive()) return;
-    if (message?.type !== "TG_RUN_AUTOFILL" || countFormFields() === 0) return;
-    getHud().then((hud) => hud.runAutofill());
+  function adopt() {
+    const hud = hudPromise;
+    hudPromise = null;
+    hud?.then((h) => h.remove());
+  }
+
+  const FRAME_CMDS = {
+    adopt,
+    autofill: (m) =>
+      m.autofill({
+        onProgress: (progress) => toTop({ type: "TG_FRAME_PROGRESS", progress }),
+        onStatus: (text, busy) => toTop({ type: "TG_FRAME_STATUS", text, busy }),
+      }),
+    undo: (m) => m.undo(),
+    next: (m, { status }) => m.scrollToNext(status),
+    jump: (m, { uid }) => m.scrollToUid(uid),
+  };
+
+  const TOP_MESSAGES = {
+    TG_RUN_AUTOFILL: (hud) => hud.runAutofill(),
+    TG_CHILD_FORM: (hud, { frameId }) => hud.addFrame(frameId),
+    TG_FRAME_PROGRESS: (hud, { progress, frameId }) => hud.showProgress(progress, frameId),
+    TG_FRAME_STATUS: (hud, { text, busy }) => hud.setStatus(text, busy),
+    TG_SUBMITTED: (hud) => hud.markApplied(),
+  };
+
+  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (!alive() || !message) return;
+    if (message.type === "TG_FRAME_CMD" && FRAME_CMDS[message.cmd]) {
+      loadAutofill()
+        .then((m) => FRAME_CMDS[message.cmd](m, message))
+        .then((result) => respond(result ?? null), () => respond(null));
+      return true;
+    }
+    if (isTop && TOP_MESSAGES[message.type]) {
+      getHud().then((hud) => TOP_MESSAGES[message.type](hud, message));
+      respond(true);
+    }
   });
 
-  if (window.top === window || countFormFields() >= 3) getHud();
+  if (isTop) getHud();
+  else {
+    whenForm(async () => {
+      if (await toTop({ type: "TG_CHILD_FORM" })) return loadAutofill().then((m) => m.warmUp()).catch(() => {});
+      getHud();
+      badge("enable");
+    });
+  }
 })();

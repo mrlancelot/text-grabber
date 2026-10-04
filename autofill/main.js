@@ -1,7 +1,7 @@
 import { detectFields, hasValue, comboboxValue } from "./detect.js";
 import { exactKey, signature, matchOption, matchText, isOpenQuestion, findLearnedExact, rankLearned, bestKey, isYesNo, sharesWord, normalize } from "./match.js";
 import { buildValues, catalog, CHOICE_KEYS, CHOICE_LABELS, FILE_KEYS, FIELD_KEYS } from "./keys.js";
-import { fillText, fillSelect, fillRadio, fillCheckboxes, fillButton, fillFile, fillCombobox, highlight, clearHighlights, markPending, jump } from "./fill.js";
+import { fillText, fillSelect, fillRadio, fillCheckboxes, fillButton, fillFile, fillCombobox, clearField, highlight, clearHighlights, markPending, jump } from "./fill.js";
 import { ready, log, table } from "../lib/log.js";
 
 const CUSTOM = new Set(["none", "freeText"]);
@@ -318,6 +318,7 @@ function watch(d) {
 
 async function fillOne(d) {
   d.trace = {};
+  if (d.kind === "select") d.before = d.el.selectedIndex;
   let status;
   try {
     status = await fillField(d);
@@ -428,6 +429,77 @@ function startWatching() {
     }, 800);
   });
   state.observer.observe(document.body, { childList: true, subtree: true });
+}
+
+function filledEls() {
+  return state.results.filter((r) => r.status === "filled" || r.status === "review").map((r) => r.desc.el);
+}
+
+const fieldCount = () => detectFields().length;
+let onSubmit = () => {};
+let armedAt = 0;
+let waiting = false;
+
+export function onSubmitted(cb) {
+  onSubmit = cb;
+}
+
+function arm(scope) {
+  const els = filledEls();
+  if (!els.length || !els.some((el) => scope.contains(el))) return false;
+  armedAt = Date.now();
+  waitForGone();
+  return true;
+}
+
+function submitted() {
+  armedAt = 0;
+  onSubmit();
+}
+
+async function waitForGone() {
+  if (waiting) return;
+  waiting = true;
+  const els = filledEls();
+  let gone = 0;
+  while (armedAt && Date.now() - armedAt < 15000) {
+    await new Promise((r) => setTimeout(r, 750));
+    gone = els.every((el) => !el.isConnected) && fieldCount() < 3 ? gone + 1 : 0;
+    if (armedAt && gone >= 2) submitted();
+  }
+  waiting = false;
+}
+
+document.addEventListener(
+  "submit",
+  (e) => {
+    if (!arm(e.target)) return;
+    setTimeout(() => !e.defaultPrevented && armedAt && submitted());
+  },
+  true
+);
+
+document.addEventListener(
+  "click",
+  (e) => {
+    const button = e.target.closest?.('button, [type="submit"], [role="button"]');
+    if (button && !button.closest("#tg-host")) arm(button.form || button.closest("form") || document.body);
+  },
+  true
+);
+
+export async function undo() {
+  stop();
+  let cleared = 0;
+  let kept = 0;
+  for (const r of live()) {
+    if (r.status !== "filled" && r.status !== "review") continue;
+    if (await clearField(r.desc)) cleared++;
+    else kept++;
+  }
+  Object.assign(state, { seen: new WeakSet(), results: [], done: 0, total: 0 });
+  armedAt = 0;
+  return { cleared, kept };
 }
 
 export async function attachResume(file) {

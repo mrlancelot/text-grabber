@@ -1,6 +1,6 @@
 import { getFolderHandle, setFolderHandle } from "../idb.js";
 import { nextFilename } from "../counter.js";
-import { el, paneHeader, group, row, toggle, button } from "./ui.js";
+import { el, paneHeader, group, row, toggle, button, send } from "./ui.js";
 import { modelsGroup } from "./models.js";
 
 export const ai = {
@@ -102,6 +102,42 @@ export const jobs = {
         ]),
         note
       ].filter((child) => child != null && child !== false));
+    }
+
+    await draw();
+  },
+};
+
+export const sites = {
+  id: "sites",
+  title: "Sites",
+  color: "var(--yellow)",
+  iconName: "plus",
+  keywords: "sites enable careers pages domains permissions",
+
+  async render(root) {
+    const header = paneHeader("Sites", "Pave runs on the major job boards automatically. Add any other careers site from the Pave toolbar button.");
+
+    async function draw() {
+      const list = (await send({ type: "TG_LIST_SITES" })) || [];
+      root.replaceChildren(
+        header.node,
+        group(
+          "Added by you",
+          list.length
+            ? list.map((pattern) =>
+                row(
+                  pattern.replace(/^\*:\/\/|\/\*$/g, ""),
+                  button("Remove", "", async () => {
+                    await chrome.permissions.remove({ origins: [pattern] });
+                    header.saved();
+                    draw();
+                  })
+                )
+              )
+            : [row("No sites yet", el("span", { className: "callout secondary", textContent: "Open a careers page, click Pave, then Enable" }))]
+        )
+      );
     }
 
     await draw();

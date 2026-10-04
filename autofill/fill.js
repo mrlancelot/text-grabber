@@ -139,6 +139,31 @@ export async function fillCombobox(el, pick, value) {
   return { ok, chosen: texts[index], reason: ok ? "" : "site rejected value" };
 }
 
+export async function clearField(d) {
+  if (d.kind === "text" || d.kind === "textarea") {
+    await fillText(d.el, "");
+    return d.el.value === "";
+  }
+  if (d.kind === "select") return fillSelect(d.el, d.before);
+  if (d.kind === "radio" || d.kind === "checkboxes") {
+    for (const o of d.optionEls.filter((o) => o.checked)) {
+      if (o.type === "checkbox") o.click();
+      else {
+        o.checked = false;
+        fire(o, "change");
+      }
+    }
+    await sleep(0);
+    return d.optionEls.every((o) => !o.checked);
+  }
+  if (d.kind === "buttons") {
+    for (const b of d.optionEls.filter((b) => b.getAttribute("aria-pressed") === "true")) realClick(b);
+    await sleep(100);
+    return d.optionEls.every((b) => b.getAttribute("aria-pressed") !== "true");
+  }
+  return false;
+}
+
 export async function fillButton(btn) {
   if (btn.getAttribute("aria-pressed") === "true") return true;
   realClick(btn);

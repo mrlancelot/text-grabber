@@ -19,7 +19,7 @@ This data is kept in Chrome's local extension storage and IndexedDB on your devi
 
 ## How the data is used
 
-Only to provide Pave's features: filling application forms you open, tailoring your resume, showing job details, and reminding you to follow up. Pave reads job pages only on the supported job sites listed in the extension, or on a page where you press the Autofill shortcut.
+Only to provide Pave's features: filling application forms you open, tailoring your resume, showing job details, and reminding you to follow up. Pave reads job pages only on the supported job sites listed in the extension, on sites you enable from the toolbar button, or on a page where you press the Autofill shortcut.
 
 ## AI features
 

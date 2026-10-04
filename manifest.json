@@ -18,13 +18,14 @@
     "unlimitedStorage"
   ],
   "action": {
-    "default_title": "Pave \u2014 open your job workspace (Alt+Shift+F autofills)",
+    "default_title": "Pave",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_popup": "action.html"
   },
   "commands": {
     "autofill": {
@@ -48,6 +49,9 @@
     "*://*.bamboohr.com/*",
     "*://jobs.jobvite.com/*",
     "*://*.myworkdaysite.com/*"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
   ],
   "content_scripts": [
     {

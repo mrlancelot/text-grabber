@@ -19,22 +19,56 @@ import { tailorResume } from "./tailor.js";
 import { FIELD_KEYS, CHOICE_LABELS } from "./autofill/keys.js";
 import { normalize } from "./autofill/match.js";
 
+const SITES_ID = "pave-sites";
+const BUILT_IN = new Set(chrome.runtime.getManifest().host_permissions);
+
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.remove(["tgCorpus", "tgVerdicts", "tgAutoAnalyze"]);
+  await syncSites();
 });
 
-chrome.action.onClicked.addListener(() => {
-  chrome.runtime.openOptionsPage();
+async function userSites() {
+  const { origins = [] } = await chrome.permissions.getAll();
+  return origins.filter((o) => !BUILT_IN.has(o));
+}
+
+async function syncSites() {
+  const sites = await userSites();
+  const [registered] = await chrome.scripting.getRegisteredContentScripts({ ids: [SITES_ID] });
+  if (registered) await chrome.scripting.unregisterContentScripts({ ids: [SITES_ID] });
+  if (!sites.length) return;
+  const [{ js, css, run_at, all_frames }] = chrome.runtime.getManifest().content_scripts;
+  await chrome.scripting.registerContentScripts([{ id: SITES_ID, matches: sites, js, css, runAt: run_at, allFrames: all_frames }]);
+}
+
+async function inject(tabId) {
+  await chrome.scripting.insertCSS({ target: { tabId, allFrames: true }, files: ["popup.css"] });
+  await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["content-script.js"] });
+}
+
+chrome.permissions.onAdded.addListener(async ({ origins = [] }) => {
+  await syncSites();
+  const fresh = origins.filter((o) => !BUILT_IN.has(o));
+  if (!fresh.length) return;
+  for (const tab of await chrome.tabs.query({ url: fresh })) inject(tab.id).catch(() => {});
 });
+
+chrome.permissions.onRemoved.addListener(syncSites);
+
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command !== "autofill" || !tab?.id) return;
   try {
-    await chrome.scripting.insertCSS({ target: { tabId: tab.id, allFrames: true }, files: ["popup.css"] });
-    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ["content-script.js"] });
-    await chrome.tabs.sendMessage(tab.id, { type: "TG_RUN_AUTOFILL" });
+    await inject(tab.id);
+    await chrome.tabs.sendMessage(tab.id, { type: "TG_RUN_AUTOFILL" }, { frameId: 0 });
   } catch {
   }
 });
+
+const BADGES = {
+  ready: { text: "●", color: "#06d6a0", title: "Pave — this application can be autofilled (Alt+Shift+F)" },
+  needs: { color: "#ff7f50", title: "Pave — some fields need you" },
+  enable: { text: "+", color: "#ffd166", title: "Pave — enable Pave on this site to autofill its application" },
+};
 
 const MATCH_FIELD_PROMPT =
   "The user sends one job application form field (label | section | kind | options | html attributes) and a list of " +
@@ -219,6 +253,11 @@ chrome.notifications.onClicked.addListener((id) => {
 const plain = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const jobKey = (company, title) => (plain(company) && plain(title) ? `${plain(company)}|${plain(title)}` : "");
 
+async function findDuplicate(url, title, company) {
+  const key = jobKey(company, title);
+  return (await listApplications()).find((a) => a.url === url || (key && jobKey(a.jdStructured?.company, a.jdStructured?.title) === key));
+}
+
 const fileData = async (file) => file && { name: file.name, type: file.type, base64: toBase64(await file.blob.arrayBuffer()) };
 
 async function draftAnswer({ question, jd, maxLength, url }) {
@@ -285,9 +324,14 @@ const handlers = {
   },
 
   async TG_CHECK_DUPLICATE({ url, title, company }) {
-    const key = jobKey(company, title);
-    const app = (await listApplications()).find((a) => a.url === url || (key && jobKey(a.jdStructured?.company, a.jdStructured?.title) === key));
+    const app = await findDuplicate(url, title, company);
     return app ? { id: app.id, savedAt: app.savedAt, status: app.status, host: new URL(app.url).hostname, sameUrl: app.url === url } : null;
+  },
+
+  async TG_MARK_APPLIED({ url, job }) {
+    const app = (await findDuplicate(url, job?.title, job?.company)) || (job?.title && (await saveApplication(url, job)));
+    if (!app || app.status !== "saved") return { ok: false };
+    return { ok: true, id: (await setStatus(app, "applied")).id };
   },
 
   async TG_GET_TAILORED({ url }) {
@@ -329,6 +373,34 @@ const handlers = {
 
   async TG_DRAFT_ANSWER(message) {
     return { text: await draftAnswer(message) };
+  },
+
+  async TG_LIST_SITES() {
+    return userSites();
+  },
+
+  async TG_FIND_FORMS(_message, sender) {
+    const results = await chrome.scripting
+      .executeScript({ target: { tabId: sender.tab.id, allFrames: true }, func: () => window.__paveFormFields?.() || 0 })
+      .catch(() => []);
+    return results.filter((r) => r.frameId !== 0 && r.result >= 3).map((r) => r.frameId);
+  },
+
+  async TG_TO_TOP({ message }, sender) {
+    return chrome.tabs.sendMessage(sender.tab.id, { ...message, frameId: sender.frameId }, { frameId: 0 }).catch(() => null);
+  },
+
+  async TG_TO_FRAME({ frameId, message }, sender) {
+    return chrome.tabs.sendMessage(sender.tab.id, message, { frameId }).catch(() => null);
+  },
+
+  async TG_BADGE({ state, needs }, sender) {
+    const tabId = sender.tab.id;
+    const badge = BADGES[state];
+    await chrome.action.setBadgeText({ tabId, text: badge ? badge.text ?? (needs ? String(needs) : "") : "" });
+    if (badge) await chrome.action.setBadgeBackgroundColor({ tabId, color: badge.color });
+    await chrome.action.setTitle({ tabId, title: badge?.title || "Pave" });
+    return { ok: true };
   },
 
   async TG_SAVE_LEARNED({ questionText, answer, kind, options }) {

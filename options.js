@@ -4,10 +4,10 @@ import resume from "./settings/resume.js";
 import saved from "./settings/saved.js";
 import applications from "./settings/applications.js";
 import data from "./settings/data.js";
-import { ai, jobs, debug } from "./settings/general.js";
+import { ai, jobs, sites, debug } from "./settings/general.js";
 import { el, icon } from "./settings/ui.js";
 
-const PANES = [profile, answers, resume, saved, applications, ai, data, jobs, debug];
+const PANES = [profile, answers, resume, saved, applications, ai, sites, data, jobs, debug];
 const nav = document.querySelector(".nav");
 const paneRoot = document.getElementById("pane");
 
