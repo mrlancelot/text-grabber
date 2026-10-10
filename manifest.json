@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pave",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Save jobs, autofill applications, tailor resumes, and track your job search with optional on-device AI.",
   "options_page": "options.html",
   "background": {
